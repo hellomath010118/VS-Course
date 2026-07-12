@@ -21,6 +21,14 @@ Everything runs **locally in your browser** via [Pyodide](https://pyodide.org)
 no server, no upload, no account, no telemetry. The page starts empty; you decide
 what goes in.
 
+## Screenshots
+
+![VS Course — the planner: credit totals, clash detection, and the weekly "When I'm busy" table](screenshots/plan-and-busy.png)
+
+*Pick your sections and VS Course tallies credits & weekly contact hours, flags the
+time-clashes (the pink rows and hatched cells), and paints a Mon–Fri "When I'm busy"
+grid. Screenshots by the Cursor AI agent that built this tool.*
+
 ## Quick start (offline, recommended)
 
 ```
@@ -49,9 +57,21 @@ internet connection** (the offline build above does not).
 The tool starts **empty** — it ships with no course data, because your course list
 is yours.
 
-1. Open the ASC course page you want in your browser.
-2. Save it with the **[SingleFile](https://github.com/gildas-lormeau/SingleFile)**
-   browser extension (it flattens the whole page into one `.html` file).
+> **First, install the free SingleFile browser extension — this step is essential.**
+> ASC renders its course listing inside nested frames, so a plain "Save Page As…"
+> won't capture it. [SingleFile](https://github.com/gildas-lormeau/SingleFile)
+> flattens the entire page (frames, styles, everything) into one `.html` file, which
+> is exactly what VS Course reads.
+>
+> Install it for
+> **[Firefox](https://addons.mozilla.org/firefox/addon/single-file)** ·
+> **[Chrome / Edge / Brave](https://chromewebstore.google.com/detail/singlefile/mpiodijhokgodhhofbcjdecpffjipkle)** ·
+> [Safari](https://apps.apple.com/us/app/singlefile-for-safari/id6444322545) ·
+> [Firefox for Android](https://addons.mozilla.org/android/addon/single-file)
+
+1. Open the ASC course page you want in your browser and let it fully load.
+2. Click the **SingleFile** toolbar button (or press `Ctrl+Shift+Y`) to save the page
+   as a single `.html` file.
 3. **Drag-and-drop** that saved `.html` onto the VS Course tool.
 
 Repeat for as many departments as you like — add several, then toggle them on and off
