@@ -2,3 +2,7 @@ __pycache__/
 *.pyc
 preview*.png
 .DS_Store
+
+# Auto-generated Quarto/markdown render of the README (not part of the tool)
+README.html
+README_files/
