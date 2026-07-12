@@ -349,7 +349,7 @@ const ASC_PARSER_SOURCE = /*__ASCPY__*/"";
 /* Pyodide runtime: prefer the LOCAL vendored copy (fully offline — no CDN/PyPI);
    fall back to the CDN only if the local files can't be reached. (Some browsers
    block file:// fetches of .wasm/.mjs; if so, serve the folder over http — see
-   the offline tip printed by `python3 webapp/asc_parser.py --build`.) */
+   the offline tip printed by `python3 asc_parser.py --build`.) */
 const PYODIDE_VERSION = "v314.0.2";
 const PYODIDE_CDN = `https://cdn.jsdelivr.net/pyodide/${PYODIDE_VERSION}/full/`;
 const PYODIDE_LOCAL = new URL("pyodide/", document.baseURI).href;

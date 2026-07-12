@@ -43,10 +43,10 @@ from bs4 import BeautifulSoup, Tag
 # Resolve the template, the default build outputs, and this module's OWN source
 # relative to THIS file rather than the current working directory, so the tool
 # works no matter where it's invoked from. The canonical command is run from the
-# repo root as `python3 webapp/asc_parser.py --build` (or `--cdn`); source,
+# repo root as `python3 asc_parser.py --build` (or `--cdn`); source,
 # build tooling and runtime all live together in this folder.
 _HERE = Path(__file__).resolve()          # this file (used for self-embedding)
-_SCRIPT_DIR = _HERE.parent                # the webapp/ folder (template + outputs)
+_SCRIPT_DIR = _HERE.parent                # this script's own folder (template + outputs)
 
 
 # ----------------------------------------------------------------------------- 
@@ -859,7 +859,7 @@ def build_site(catalog: CourseCatalog, out_html: str | Path,
     runtime — a single emailable file that needs no local folder (but needs net).
     """
     import json
-    # Template sits alongside this script (webapp/template.html), resolved via
+    # Template sits alongside this script (template.html), resolved via
     # __file__ so the build is independent of the current working directory.
     tpl_path = Path(template) if template else _SCRIPT_DIR / "template.html"
     html_tpl = Path(tpl_path).read_text(encoding="utf-8")
@@ -983,8 +983,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.build is not None or args.cdn:
         # Defaults live ALONGSIDE this script (CWD-independent), so the canonical
-        #   python3 webapp/asc_parser.py --build   -> <script_dir>/timetable.html
-        #   python3 webapp/asc_parser.py --cdn     -> <script_dir>/timetable-share.html
+        #   python3 asc_parser.py --build   -> <script_dir>/timetable.html
+        #   python3 asc_parser.py --cdn     -> <script_dir>/timetable-share.html
         # work from anywhere; an explicit `--build OUT` always wins.
         if args.build:                       # explicit OUT path given
             out_name = args.build
@@ -1005,9 +1005,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             # Pyodide is vendored for offline use, but browsers block file:// module
             # fetches, so a plain double-click falls back to the CDN (needs internet).
-            # For true offline, serve the folder over http -- webapp/serve.py does
+            # For true offline, serve the folder over http -- serve.py does
             # this (and opens the page for you).
-            print("  Offline: python3 webapp/serve.py   (serves it + opens your browser)")
+            print("  Offline: python3 serve.py   (serves it + opens your browser)")
             print(f"           or: cd {out.resolve().parent} && python3 -m http.server 8000 "
                   f"then open http://localhost:8000/{out.name}")
         return 0
