@@ -1,0 +1,10 @@
+# VS Course needs NO third-party pip installs to run.
+#
+# Serving the tool requires only the Python 3.8+ STANDARD LIBRARY (see serve.py:
+# http.server, socketserver, webbrowser, pathlib). Nothing to install here.
+#
+# All parsing dependencies (e.g. beautifulsoup4, soupsieve) run IN THE BROWSER
+# via the vendored Pyodide runtime in ./pyodide/ -- they are fetched/installed
+# inside Pyodide at page load, never into your system Python.
+#
+# This file is intentionally left without any pinned packages.

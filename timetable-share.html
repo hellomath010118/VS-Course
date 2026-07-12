@@ -1,0 +1,2295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASC Course Explorer</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#1f2430; --muted:#71778a;
+    --line:#e7e9ef; --accent:#4f46e5; --accent-soft:#eef0fe;
+    --on:#2b3040; --off:#aab0c0;
+    --busy:#a65a5a; --busy-soft:#f5e4e0; --clash:#6e2f2f;  /* SUMMARY busy-table: soothing clay (busy + hatch) — edit HERE */
+    --clash-red:#e11d48; --clash-red-soft:#ffe4ea;  /* CLASH signal on grid + plan: urgent red — edit HERE */
+    --ok:#0f9d6c; --ok-soft:#e6f7f0; --warn:#b45309; --warn-soft:#fef3c7;
+    --radius:12px; --shadow:0 1px 2px rgba(17,24,39,.05),0 8px 24px rgba(17,24,39,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial}
+  .wrap{max-width:1240px;margin:0 auto;padding:24px 20px 80px}
+  header h1{margin:0;font-size:22px;font-weight:650;letter-spacing:-.01em}
+  header p{margin:4px 0 0;color:var(--muted)}
+  .stats{display:flex;gap:14px;margin:14px 0 0;flex-wrap:wrap}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:9px 14px;box-shadow:var(--shadow)}
+  .stat b{font-size:18px;font-weight:650} .stat span{color:var(--muted);font-size:12px;display:block}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:14px;margin:16px 0}
+  .toolbar{margin:16px 0;padding:14px;
+    background:var(--panel);
+    border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .row + .row{margin-top:10px}
+  .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+    min-width:74px}
+  .search{flex:1;min-width:220px;display:flex;align-items:center;gap:8px;
+    background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+  .search input{border:0;background:transparent;outline:0;width:100%;font:inherit;color:inherit}
+  select{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);
+    border-radius:9px;padding:6px 9px}
+
+  /* upload zone + file list (data is parsed in-browser via Pyodide) */
+  .dropzone{flex:1;min-width:260px;border:1.5px dashed var(--line);border-radius:10px;
+    padding:10px 14px;background:var(--bg);transition:.12s;cursor:pointer}
+  .dropzone.drag{border-color:var(--accent);background:var(--accent-soft)}
+  .dz-main{font-size:13px}
+  .dz-sub{font-size:12px;color:var(--muted);margin-top:3px}
+  .dz-sub.loading{color:var(--warn)} .dz-sub.ready{color:var(--ok)} .dz-sub.error{color:var(--busy)}
+  .linklike{color:var(--accent);cursor:pointer;text-decoration:underline}
+  .filelist{margin-top:10px;display:flex;flex-direction:column}
+  .fitem{display:flex;gap:8px;align-items:center;padding:6px 2px;border-bottom:1px solid var(--line)}
+  .fitem:last-child{border-bottom:0}
+  .fitem.hiddenf{opacity:.5}
+
+  /* toggle chips: dark = enabled/shown, light = disabled/hidden */
+  .chip{border:1px solid var(--line);background:var(--panel);color:var(--ink);
+    padding:5px 11px;border-radius:999px;cursor:pointer;font-size:12.5px;user-select:none;
+    transition:.12s;display:inline-flex;align-items:center;gap:6px}
+  .chip:hover{filter:brightness(.97)}
+  .chip.tgl{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600}
+  .chip.tgl::before{content:"\2713\2009"}
+  .chip.tgl.off{background:var(--panel);color:var(--off);border-color:var(--line);
+    border-style:dashed;text-decoration:line-through;font-weight:400;opacity:.65}
+  .chip.tgl.off::before{content:""}
+  .chip.slot{background:var(--panel);color:var(--ink)}
+  .chip.slot.on{background:var(--busy);color:#fff;border-color:var(--busy)}
+  .chip .n{font-size:11px;opacity:.7}
+  .toggle{display:flex;align-items:center;gap:7px;color:var(--ink);cursor:pointer;font-size:12.5px}
+  .toggle input{accent-color:var(--accent)}
+  .spacer{flex:1}
+  .btn{border:1px solid var(--line);background:var(--panel);border-radius:10px;
+    padding:7px 12px;cursor:pointer;font:inherit}
+  .btn:hover{border-color:#cfd3df}
+  .tabs{display:inline-flex;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px}
+  .tabs button{border:0;background:transparent;padding:6px 14px;border-radius:8px;cursor:pointer;
+    font:inherit;color:var(--muted)}
+  .tabs button.on{background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
+  .hint{font-size:12px;color:var(--muted)}
+
+  /* badges */
+  .badge{font-weight:650;font-size:12px;background:var(--accent-soft);color:var(--accent);
+    border-radius:7px;padding:1px 8px}
+  .tag{font-size:10.5px;border-radius:6px;padding:1px 6px;font-weight:600;white-space:nowrap}
+  .tag.adv{background:var(--warn-soft);color:var(--warn)}
+  .tag.eligible{background:var(--ok-soft);color:var(--ok)}
+  .tag.restricted{background:var(--busy-soft);color:var(--busy)}
+  .tag.restrictedov{background:var(--warn-soft);color:var(--warn)}
+  .tag.other{background:#eef2ff;color:#4338ca}
+
+  /* weekly grid */
+  .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;align-items:start}
+  .day h3{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;
+    color:var(--muted);text-align:center}
+  .cell{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;
+    margin-bottom:10px;box-shadow:var(--shadow)}
+  .cell .chd{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .time{font-size:11px;color:var(--muted)}
+  /* main grid cells stay neutral about busy/free: busy times are indicated ONLY
+     in the "When I'm busy" table (.busytbl), never tinted here (user constraint) */
+  .cell.lab .body{color:var(--muted);font-size:12px;font-style:italic}
+  .cc{border-top:1px dashed var(--line);padding-top:6px;margin-top:6px;position:relative}
+  .cc:first-of-type{border-top:0;padding-top:0;margin-top:0}
+  .cc.dim{opacity:.5}
+  .cc .code{font-weight:600;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .cc .nm{color:var(--muted);font-size:12px}
+  .cc .x{position:absolute;top:2px;right:0;cursor:pointer;color:var(--off);
+    font-size:14px;line-height:1;opacity:0;transition:.1s}
+  .cc:hover .x{opacity:1}
+  .cc .x:hover{color:var(--busy)}
+  .empty{color:#aab0c0;font-size:12px;font-style:italic}
+
+  /* tables */
+  table{width:100%;border-collapse:separate;border-spacing:0;background:var(--panel);
+    border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:var(--bg)}
+  tr:last-child td{border-bottom:0}
+  tr.dim td{opacity:.55}
+  tr:hover td{background:#fbfbfe}
+  td.slotcell{white-space:nowrap}
+  .pill{display:inline-block;background:var(--bg);border:1px solid var(--line);border-radius:7px;
+    padding:1px 7px;font-size:12px;margin:2px 4px 2px 0}
+  .pill.busy{background:var(--busy-soft);border-color:var(--busy);color:var(--busy)}
+  .muted{color:var(--muted)}
+  .rowx{cursor:pointer;color:var(--off)} .rowx:hover{color:var(--busy)}
+  .hidden{display:none}
+  details.hb{margin:16px 0} details.hb summary{cursor:pointer;font-weight:600}
+  .hb .item{display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+  .foot{margin-top:24px;color:var(--muted);font-size:12px;text-align:center}
+
+  /* ---- schedule sub-sections (unscheduled / tutorials) inside grid & slot views ---- */
+  .subhead{margin:20px 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.07em;
+    color:var(--muted);display:flex;align-items:center;gap:8px}
+  .subhead .n{background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:0 8px;font-size:11px}
+  .extra-wrap{display:flex;flex-wrap:wrap;gap:8px}
+  .unit-chip{display:flex;gap:8px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:8px 10px;min-width:180px;box-shadow:var(--shadow)}
+  .unit-chip.planned{box-shadow:inset 0 0 0 2px var(--accent);background:var(--accent-soft)}
+  .unit-chip .body{display:flex;flex-direction:column;gap:2px}
+  .mtg{font-size:11px;color:var(--muted)}
+
+  /* ---- add-to-plan pin (used across all views) ---- */
+  .pin{cursor:pointer;border:1px solid var(--line);background:var(--panel);border-radius:7px;
+    width:22px;height:22px;line-height:19px;text-align:center;color:var(--accent);font-weight:700;
+    flex:0 0 auto;user-select:none;transition:.12s}
+  .pin:hover{border-color:var(--accent);background:var(--accent-soft)}
+  .pin.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+  /* ---- planned / clash overlays on the weekly grid ---- */
+  .cc.planned{background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent);border-radius:8px;
+    padding:4px 6px;margin:2px 0}
+  .cc.clash{box-shadow:inset 0 0 0 2px var(--clash-red)}
+  .pill.planned{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+  .div-badge{font-size:10.5px;background:#eef2ff;color:#4338ca;border-radius:6px;padding:0 6px;font-weight:600}
+  .cr{font-size:11px;color:var(--ok);font-weight:600;white-space:nowrap}
+  .ltp{font-size:10.5px;background:var(--bg);border:1px solid var(--line);color:var(--muted);
+       border-radius:6px;padding:0 6px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .cc .crline{margin-top:3px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+
+  /* ---- My Plan panel ---- */
+  .plan-tot{display:flex;gap:12px;flex-wrap:wrap;margin:4px 0 14px}
+  .plan-tot .box{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 14px}
+  .plan-tot .box b{font-size:18px;font-weight:650} .plan-tot .box span{display:block;font-size:11px;color:var(--muted)}
+  .plan-tot .box.warn{background:var(--clash-red-soft);border-color:var(--clash-red)} .plan-tot .box.warn b{color:var(--clash-red)}
+  .plan-list{display:flex;flex-direction:column}
+  .plan-item{display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--line)}
+  .plan-item:last-child{border-bottom:0}
+  .plan-item.clash{background:var(--clash-red-soft);border-radius:8px;padding-left:8px}
+  .plan-item .grow{flex:1;min-width:0}
+  .plan-item .meta{color:var(--muted);font-size:12px}
+  .credit-in{width:48px;font:inherit;border:1px solid var(--line);border-radius:7px;padding:3px 6px;background:var(--panel)}
+  .clashtag{font-size:10.5px;background:var(--clash-red-soft);color:var(--clash-red);border-radius:6px;padding:1px 6px;font-weight:600}
+  .planhint{color:var(--muted);font-size:12px}
+
+  /* ---- Feature 1: restriction reason line ---- */
+  .restrict-note{font-size:11px;color:var(--warn);margin-top:3px;line-height:1.35}
+  .restrict-note .muted{color:var(--muted)}
+
+  /* ---- Feature 2: "When I'm busy" — fixed-width weekly table (NOT the main grid) ---- */
+  .core-box, .busy-box{border-top:1px solid var(--line);margin-top:10px;padding-top:10px}
+  .busytbl-wrap{margin-top:8px;overflow-x:auto}
+  .busytbl{width:100%;border-collapse:collapse;table-layout:fixed}      /* fixed = EQUAL columns */
+  .busytbl th, .busytbl td{border:1px solid var(--line);height:26px;text-align:center;
+    font-size:11px;padding:0}
+  .busytbl thead th{background:var(--bg);color:var(--muted);font-weight:600;height:22px}
+  .busytbl th.rh{width:118px;text-align:right;padding-right:8px;color:var(--muted);
+    font-weight:500;white-space:nowrap}                                 /* time label column */
+  .busytbl td.bt{background:#fff;cursor:pointer;color:#fff;font-weight:600;line-height:26px}
+  .busytbl td.bt.none{background:#fff;cursor:default}                   /* no period here */
+  .busytbl td.bt.free{background:#fff}                                  /* free = white + gridlines */
+  .busytbl td.bt.busy{background:var(--busy)}                           /* busy = soft muted clay */
+  .busytbl td.bt.clash{background:repeating-linear-gradient(45deg,var(--clash),var(--clash) 4px,var(--busy) 4px,var(--busy) 8px)}  /* clash = deeper hatch, same hue */
+  .busytbl td.bt.free:hover{background:var(--busy-soft)}
+  .busy-legend{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .bkey{font-size:11px;padding:1px 8px;border-radius:6px;border:1px solid var(--line);color:#fff}
+  .bkey.busy{background:var(--busy);border-color:var(--busy)}
+  .bkey.clash{background:repeating-linear-gradient(45deg,var(--clash),var(--clash) 4px,var(--busy) 4px,var(--busy) 8px);border-color:var(--clash)}
+  .bkey.free{background:#fff;color:var(--muted)}
+
+  /* ---- Feature 3: core courses (suggest / confirm / pin) ---- */
+  .core-row{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .core-in{flex:1;min-width:200px;font:inherit;color:inherit;background:var(--bg);
+    border:1px solid var(--line);border-radius:9px;padding:6px 10px}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .core-badge{font-size:10px;background:var(--ok-soft);color:var(--ok);border:1px solid var(--ok);
+    border-radius:6px;padding:0 6px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+  .core-chip{background:var(--ok-soft);border:1px solid var(--ok);color:var(--ok)}
+  .core-chip .rm{cursor:pointer;margin-left:5px;font-weight:700;opacity:.7}
+  .core-chip .rm:hover{opacity:1;color:var(--busy)}
+  .sug-chip{background:var(--accent-soft);border:1px solid var(--accent);color:var(--accent);cursor:pointer}
+  .sug-chip:hover{filter:brightness(.97)}
+  .plan-item.core{background:var(--ok-soft);border-radius:8px;padding-left:8px}
+  .plan-item.core.clash{background:var(--clash-red-soft)}
+  .cc.core{box-shadow:inset 0 0 0 1px var(--ok)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>ASC Course Explorer</h1>
+    <p id="sub">Filter & visualise courses by slot.</p>
+    <div class="stats">
+      <div class="stat"><b id="s-total">0</b><span>courses (unique)</span></div>
+      <div class="stat"><b id="s-shown">0</b><span>showing</span></div>
+      <div class="stat"><b id="s-elig">0</b><span>eligible for you</span></div>
+      <div class="stat"><b id="s-hidden">0</b><span>manually hidden</span></div>
+      <div class="stat"><b id="s-plan">0</b><span>in my plan</span></div>
+    </div>
+  </header>
+
+  <!-- data source: uploaded ASC pages are parsed in-browser by asc_parser.py (Pyodide) -->
+  <div class="card">
+    <div class="row">
+      <span class="lbl">Courses</span>
+      <div id="dropzone" class="dropzone">
+        <div class="dz-main">Drop ASC <b>.html</b> pages here, or <span class="linklike">browse</span></div>
+        <div class="dz-sub" id="parserStatus">Loading parser…</div>
+      </div>
+      <input type="file" id="filepick" accept=".html,.htm" multiple hidden>
+      <span class="spacer"></span>
+      <button class="btn" id="clearData">Clear data</button>
+    </div>
+    <div id="fileList" class="filelist"></div>
+  </div>
+
+  <!-- profile drives eligibility from the ASC restriction rules -->
+  <div class="card">
+    <div class="row">
+      <span class="lbl">Your profile</span>
+      <label class="hint">Dept <select id="p-dept"></select></label>
+      <label class="hint">Program <select id="p-prog"></select></label>
+      <label class="hint">Year of study <select id="p-year"></select></label>
+      <span class="hint" id="p-hint"></span>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="row">
+      <label class="search">🔎<input id="q" placeholder="Search code, name or instructor…"></label>
+      <div class="tabs" id="tabs">
+        <button data-v="grid" class="on">Weekly grid</button>
+        <button data-v="slot">By slot</button>
+        <button data-v="list">List</button>
+      </div>
+    </div>
+    <div class="row"><span class="lbl">Departments</span><span id="depts" class="row"></span></div>
+    <div class="row"><span class="lbl">Levels</span><span id="levels" class="row"></span></div>
+    <div class="row"><span class="lbl">Types</span><span id="types" class="row"></span></div>
+    <div class="row"><span class="lbl">Busy slots</span><span id="slots" class="row"></span></div>
+    <div class="row">
+      <span class="lbl">Options</span>
+      <label class="toggle"><input type="checkbox" id="hideBusy">Hide busy-slot</label>
+      <label class="toggle"><input type="checkbox" id="hideInelig">Hide ineligible</label>
+      <label class="toggle"><input type="checkbox" id="hideOtherAdv">Hide other-dept advanced</label>
+      <label class="toggle"><input type="checkbox" id="hideCore">Hide core / 1st-year</label>
+      <label class="toggle"><input type="checkbox" id="distinct" checked>Group sections</label>
+      <span class="spacer"></span>
+      <button class="btn" id="reset">Reset filters</button>
+    </div>
+  </div>
+
+  <!-- My Plan: selected (course+division) units with credits, contact hours & clash checks -->
+  <div class="card plan" id="planPanel">
+    <div class="row" style="justify-content:space-between">
+      <span class="lbl">My plan</span>
+      <span class="planhint">Click the <b>＋</b> on any course to add its section. Divisions plan independently.</span>
+      <span class="spacer"></span>
+      <button class="btn" id="clearPlan">Clear plan</button>
+    </div>
+    <div class="plan-tot" id="planTotals"></div>
+
+    <!-- Feature: core courses — suggested from profile, confirmed/edited by you, pinned in the plan -->
+    <div class="core-box">
+      <div class="row">
+        <span class="lbl">Core</span>
+        <button class="btn sm" id="suggestCore" title="Propose likely core courses for your profile (best-effort)">Suggest core</button>
+        <input id="coreInput" class="core-in" placeholder="or paste your core codes: CS 301, CS 302, MA 205…">
+        <button class="btn sm" id="applyCore" title="Pin these codes as core (overrides the heuristic)">Pin these</button>
+      </div>
+      <div id="coreSuggest" class="core-row"></div>
+      <div id="coreList" class="core-row"></div>
+    </div>
+
+    <!-- Feature: "When I'm busy" — a SEPARATE, fixed-width weekly table (weekday
+         columns x IIT-B time-slot rows). Busy (muted clay) = planned meetings + external
+         commitments; clash (hatched) = >=2 overlapping. The main variable-width
+         grid view is intentionally left unmarked (user constraint). -->
+    <div class="busy-box">
+      <div class="row" style="justify-content:space-between">
+        <span class="lbl">When I'm busy</span>
+        <span class="busy-legend">
+          <span class="bkey busy">busy</span><span class="bkey clash">clash</span>
+          <span class="bkey free">free</span>
+          <span class="hint">click a cell to mark / unmark an external commitment</span>
+        </span>
+      </div>
+      <div id="busyTable" class="busytbl-wrap"></div>
+    </div>
+
+    <div class="plan-list" id="planList"></div>
+  </div>
+
+  <details class="hb card" id="hiddenBox">
+    <summary>Manually hidden (<span id="h-count">0</span>)</summary>
+    <div id="hiddenList"></div>
+  </details>
+
+  <div id="emptyState" class="card hidden"><b>No courses loaded.</b> Drag &amp; drop one or more ASC
+    <b>.html</b> pages (saved with SingleFile) onto the box above — they're parsed right in your
+    browser (no upload to any server).</div>
+
+  <div id="view-grid"></div>
+  <div id="view-slot" class="hidden"></div>
+  <div id="view-list" class="hidden"></div>
+  <!-- tutorials/extras + unscheduled: one shared block, always re-rendered by refresh()
+       on the same reactive path as the grid/plan (see renderExtras) -->
+  <div id="view-extras"></div>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+/* Initial dataset + the embedded parser are injected by build_site():
+   - DATA               : initial payload (may be empty; user can add files live)
+   - ASC_PARSER_SOURCE  : full text of asc_parser.py, imported in-browser via Pyodide */
+const DATA = {"courses": [], "units": {}, "slot_info": {"1": {"days": ["Mon", "Tue", "Thu"], "time": "09:30–10:25"}, "2": {"days": ["Mon", "Tue", "Thu"], "time": "10:35–11:30"}, "3": {"days": ["Mon", "Tue", "Thu"], "time": "11:35–12:30"}, "4": {"days": ["Tue", "Thu"], "time": "08:00–09:25"}, "5": {"days": ["Wed", "Fri"], "time": "08:00–09:25"}, "6": {"days": ["Wed", "Fri"], "time": "09:30–10:55"}, "7": {"days": ["Wed", "Fri"], "time": "11:05–12:30"}, "8": {"days": ["Mon", "Thu"], "time": "14:00–15:25"}, "9": {"days": ["Mon", "Thu"], "time": "15:30–16:55"}, "10": {"days": ["Tue", "Fri"], "time": "14:00–15:25"}, "11": {"days": ["Tue", "Fri"], "time": "15:30–16:55"}, "12": {"days": ["Mon", "Tue", "Thu"], "time": "17:05–18:00"}, "L": {"days": ["Mon", "Tue", "Wed", "Thu", "Fri"], "time": "lab block (see venue)"}}, "day_grid": {"Mon": [["08:00–09:25", "XE"], ["09:30–10:25", "1"], ["10:35–11:30", "2"], ["11:35–12:30", "3"], ["14:00–15:25", "8"], ["15:30–16:55", "9"], ["17:05–18:00", "12"], ["14:00–17:00", "L"]], "Tue": [["08:00–09:25", "4"], ["09:30–10:25", "1"], ["10:35–11:30", "2"], ["11:35–12:30", "3"], ["14:00–15:25", "10"], ["15:30–16:55", "11"], ["17:05–18:00", "12"], ["14:00–17:00", "L"]], "Wed": [["08:00–09:25", "5"], ["09:30–10:55", "6"], ["11:05–12:30", "7"], ["14:00–17:00", "L"]], "Thu": [["08:00–09:25", "4"], ["09:30–10:25", "1"], ["10:35–11:30", "2"], ["11:35–12:30", "3"], ["14:00–15:25", "8"], ["15:30–16:55", "9"], ["17:05–18:00", "12"], ["14:00–17:00", "L"]], "Fri": [["08:00–09:25", "5"], ["09:30–10:55", "6"], ["11:05–12:30", "7"], ["14:00–15:25", "10"], ["15:30–16:55", "11"], ["14:00–17:00", "L"]]}, "meta": {"academic_year": null}};
+const ASC_PARSER_SOURCE = `"""
+Generic parser + query tool for IIT-B ASC course listings saved with SingleFile.
+
+Works on the HTML you get from: ASC -> course list page -> "SingleFile" save.
+That save is a *frameset*, and each frame's real HTML is stuffed into a
+\`src="data:text/html,..."\` URI. This tool digs the course table out of there,
+so you can just re-save the page every semester and re-run this.
+
+--------------------------------------------------------------------------------
+Design patterns used (asked for on purpose):
+
+- Value Object          : \`Course\` is a frozen dataclass (immutable, comparable).
+- Adapter               : \`SingleFileSource\` adapts SingleFile's frameset +
+                          data-URI mess into plain inner-HTML documents.
+- Factory Method        : \`ASCParser.parse\` builds \`Course\` objects from a row;
+                          \`load(path)\` is the top-level factory for a catalog.
+- Repository            : \`CourseCatalog\` is an in-memory collection with a
+                          query API (find/filter), hiding storage details.
+- Specification         : \`Spec\` predicates (\`InSlot\`, \`CodeMatches\`, \`DeptIn\`)
+                          compose with \`&\` \`|\` \`~\` -> "not in slot" is just \`~InSlot\`.
+- Fluent Interface      : \`CourseCatalog\` query methods return a new catalog,
+                          so calls chain: \`cat.where(...).exclude_slots(...)\`.
+- Facade                : \`load()\` hides Adapter + Parser + Repository wiring.
+- Iterator              : \`CourseCatalog\` is iterable / sized / indexable.
+--------------------------------------------------------------------------------
+"""
+from __future__ import annotations
+
+import argparse
+import html
+import re
+import sys
+import urllib.parse
+from dataclasses import asdict, dataclass, replace
+from pathlib import Path
+from typing import Callable, Iterable, Iterator, Sequence
+
+from bs4 import BeautifulSoup, Tag
+
+# ----------------------------------------------------------------------------- 
+# Script location (CWD-independent)
+# -----------------------------------------------------------------------------
+# Resolve the template, the default build outputs, and this module's OWN source
+# relative to THIS file rather than the current working directory, so the tool
+# works no matter where it's invoked from. The canonical command is run from the
+# repo root as \`python3 webapp/asc_parser.py --build\` (or \`--cdn\`); source,
+# build tooling and runtime all live together in this folder.
+_HERE = Path(__file__).resolve()          # this file (used for self-embedding)
+_SCRIPT_DIR = _HERE.parent                # the webapp/ folder (template + outputs)
+
+
+# ----------------------------------------------------------------------------- 
+# Value Objects
+# -----------------------------------------------------------------------------
+@dataclass(frozen=True)
+class Restriction:
+    """One row of a course's ASC restriction table (an allow/deny rule)."""
+    batch: str        # entry/batch year, e.g. "2024" or "ALL"
+    dept: str         # department name, or "ALL"
+    program: str      # e.g. "B.Tech.", or "ALL"
+    allowed: bool     # True = Allowed, False = Deny
+    overridable: bool
+
+
+@dataclass(frozen=True)
+class Course:
+    """One course-section row from the ASC table (immutable value object)."""
+    code: str            # normalized, e.g. "CS 101"
+    name: str
+    slot: str            # canonical slot token, e.g. "7", "14", "A1"
+    course_type: str     # Theory / Lab / ...
+    category: str        # ASC tag: "Advanced Course." / "Interdisciplinary STEM Course."
+    instructor: str
+    venue: str
+    division: str
+    slot_detail: str = ""  # full slot cell (days/times), e.g. "7 Wed-7A-.. Fri-7B-.."
+    restrictions: tuple[Restriction, ...] = ()  # eligibility rules (allow/deny)
+    source: str = ""       # provenance: which uploaded file/dept page this came from
+
+    @property
+    def dept(self) -> str:
+        """Department letters, e.g. 'CS' from 'CS 101' or 'CS6001'."""
+        m = re.match(r"[A-Za-z]+", self.code.replace(" ", ""))
+        return m.group(0) if m else ""
+
+    @property
+    def number(self) -> str:
+        """Numeric part, e.g. '101' from 'CS 101', '6001' from 'CS6001'."""
+        m = re.search(r"\\d[\\dA-Za-z]*$", self.code.replace(" ", ""))
+        return m.group(0) if m else ""
+
+    @property
+    def slot_tokens(self) -> frozenset[str]:
+        """Slot tokens, upper-cased, e.g. '7' -> {'7'}, 'L1' -> {'L1'}."""
+        return frozenset(t.upper() for t in re.split(r"[^A-Za-z0-9]+", self.slot) if t)
+
+    @property
+    def instructor_short(self) -> str:
+        """Instructor names without the 'I -'/'A -' status prefixes."""
+        names = re.sub(r"\\b[IA]\\s*-\\s*", "", self.instructor)
+        return re.sub(r"\\s+", " ", names).strip(" ,")
+
+    @property
+    def is_advanced(self) -> bool:
+        """ASC-tagged 'Advanced Course.' (vs 'Interdisciplinary STEM Course.')."""
+        return "advanced" in self.category.lower()
+
+    def as_dict(self) -> dict:
+        return {
+            "code": self.code,
+            "name": self.name,
+            "slot": self.slot,
+            "slot_detail": self.slot_detail,
+            "dept": self.dept,
+            "number": self.number,
+            "level": (self.number[:1] + "xx") if self.number[:1].isdigit() else "?",
+            "type": self.course_type,
+            "category": self.category,
+            "advanced": self.is_advanced,
+            "instructor": self.instructor_short,
+            "venue": self.venue,
+            "division": self.division,
+            "source": self.source,
+            "restrictions": [asdict(r) for r in self.restrictions],
+            # schedule structure (see the "Schedule & credit heuristics" section)
+            "meetings": parse_meetings(self.slot_detail, self.slot),
+            "kind": slot_kind(self.slot),
+            "unit_key": plannable_key(self.code, self.division),
+        }
+
+    def __str__(self) -> str:
+        return f"{self.code:<10} slot {self.slot:<4} {self.course_type:<8} {self.name}"
+
+
+# ----------------------------------------------------------------------------- 
+# Specification pattern (composable filters)
+# -----------------------------------------------------------------------------
+class Spec:
+    """A predicate over Course that composes with & | ~ (Specification pattern)."""
+
+    def is_satisfied(self, c: Course) -> bool:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def __call__(self, c: Course) -> bool:
+        return self.is_satisfied(c)
+
+    def __and__(self, other: "Spec") -> "Spec":
+        return _And(self, other)
+
+    def __or__(self, other: "Spec") -> "Spec":
+        return _Or(self, other)
+
+    def __invert__(self) -> "Spec":
+        return _Not(self)
+
+
+class _Predicate(Spec):
+    def __init__(self, fn: Callable[[Course], bool]):
+        self._fn = fn
+
+    def is_satisfied(self, c: Course) -> bool:
+        return self._fn(c)
+
+
+class _And(Spec):
+    def __init__(self, a: Spec, b: Spec):
+        self.a, self.b = a, b
+
+    def is_satisfied(self, c: Course) -> bool:
+        return self.a.is_satisfied(c) and self.b.is_satisfied(c)
+
+
+class _Or(Spec):
+    def __init__(self, a: Spec, b: Spec):
+        self.a, self.b = a, b
+
+    def is_satisfied(self, c: Course) -> bool:
+        return self.a.is_satisfied(c) or self.b.is_satisfied(c)
+
+
+class _Not(Spec):
+    def __init__(self, a: Spec):
+        self.a = a
+
+    def is_satisfied(self, c: Course) -> bool:
+        return not self.a.is_satisfied(c)
+
+
+def _norm_slot(s) -> str:
+    return str(s).strip().upper()
+
+
+class InSlot(Spec):
+    """Course runs in any of the given slots (int or str, case-insensitive)."""
+    def __init__(self, *slots):
+        self.slots = {_norm_slot(s) for s in slots}
+
+    def is_satisfied(self, c: Course) -> bool:
+        return bool(self.slots & c.slot_tokens)
+
+
+class DeptIn(Spec):
+    """Course department is one of the given (e.g. 'CS', 'ME')."""
+    def __init__(self, *depts):
+        self.depts = {d.strip().upper() for d in depts}
+
+    def is_satisfied(self, c: Course) -> bool:
+        return c.dept.upper() in self.depts
+
+
+class CodeMatches(Spec):
+    """Course code matches a regex (spaces optional, case-insensitive)."""
+    def __init__(self, pattern: str):
+        self.rx = re.compile(pattern, re.I)
+
+    def is_satisfied(self, c: Course) -> bool:
+        flat = c.code.replace(" ", "")
+        return bool(self.rx.search(c.code) or self.rx.search(flat))
+
+
+class NumberIn(Spec):
+    """Course numeric part is one of the given (e.g. '101')."""
+    def __init__(self, *numbers):
+        self.numbers = {str(n).strip() for n in numbers}
+
+    def is_satisfied(self, c: Course) -> bool:
+        return c.number in self.numbers
+
+
+# ----------------------------------------------------------------------------- 
+# Repository + Fluent Interface + Iterator
+# -----------------------------------------------------------------------------
+class CourseCatalog:
+    """In-memory repository of courses with a chainable query API."""
+
+    def __init__(self, courses: Iterable[Course]):
+        self._courses: list[Course] = list(courses)
+
+    # -- Iterator / container protocol --
+    def __iter__(self) -> Iterator[Course]:
+        return iter(self._courses)
+
+    def __len__(self) -> int:
+        return len(self._courses)
+
+    def __getitem__(self, i):
+        return self._courses[i]
+
+    # -- Fluent query methods (each returns a new catalog) --
+    def where(self, spec: Spec) -> "CourseCatalog":
+        return CourseCatalog(c for c in self._courses if spec(c))
+
+    def in_slot(self, *slots) -> "CourseCatalog":
+        return self.where(InSlot(*slots))
+
+    def not_in_slot(self, *slots) -> "CourseCatalog":
+        return self.where(~InSlot(*slots))
+
+    def in_dept(self, *depts) -> "CourseCatalog":
+        return self.where(DeptIn(*depts))
+
+    def code_matches(self, pattern: str) -> "CourseCatalog":
+        return self.where(CodeMatches(pattern))
+
+    def numbers(self, *nums) -> "CourseCatalog":
+        return self.where(NumberIn(*nums))
+
+    def distinct(self, key: Callable[[Course], object] = lambda c: (c.code, c.slot)) -> "CourseCatalog":
+        seen, out = set(), []
+        for c in self._courses:
+            k = key(c)
+            if k not in seen:
+                seen.add(k)
+                out.append(c)
+        return CourseCatalog(out)
+
+    def sort(self, key: Callable[[Course], object] = lambda c: (c.dept, c.number)) -> "CourseCatalog":
+        return CourseCatalog(sorted(self._courses, key=key))
+
+    def slots(self) -> list[str]:
+        """All distinct slot tokens present, sorted (numbers first)."""
+        toks = {t for c in self._courses for t in c.slot_tokens}
+        return sorted(toks, key=lambda t: (not t.isdigit(), int(t) if t.isdigit() else 0, t))
+
+    def to_list(self) -> list[Course]:
+        return list(self._courses)
+
+
+# ----------------------------------------------------------------------------- 
+# Adapter: SingleFile frameset -> inner HTML documents
+# -----------------------------------------------------------------------------
+class SingleFileSource:
+    """Adapts a SingleFile-saved page into raw inner-HTML document strings.
+
+    SingleFile saves framesets with each frame's HTML in a \`data:text/html,...\`
+    URI. This yields the decoded HTML of every frame, plus the outer document,
+    so the parser can scan all of them for the course table.
+    """
+
+    def __init__(self, raw_html: str):
+        self._raw = raw_html
+
+    @classmethod
+    def from_path(cls, path: str | Path) -> "SingleFileSource":
+        text = Path(path).read_text(encoding="utf-8", errors="ignore")
+        return cls(text)
+
+    def documents(self) -> Iterator[str]:
+        soup = BeautifulSoup(self._raw, "html.parser")
+        frames = soup.find_all(["frame", "iframe"])
+        found_frame = False
+        for fr in frames:
+            src = fr.get("src") or fr.get("srcdoc") or ""
+            if src.startswith("data:text/html"):
+                found_frame = True
+                yield self._decode_data_uri(src)
+        # Fallback: no data-URI frames -> the page itself holds the content.
+        if not found_frame:
+            yield self._raw
+
+    @staticmethod
+    def _decode_data_uri(uri: str) -> str:
+        body = uri.split(",", 1)[1] if "," in uri else uri
+        if ";base64" in uri.split(",", 1)[0]:
+            import base64
+            return base64.b64decode(body).decode("utf-8", "ignore")
+        return urllib.parse.unquote(body)
+
+
+# ----------------------------------------------------------------------------- 
+# Parser (Factory Method for Course)
+# -----------------------------------------------------------------------------
+class ASCParser:
+    """Turns ASC HTML into Course objects, mapping columns by header text.
+
+    Header-driven mapping means it survives column reordering across semesters.
+    """
+
+    # header keyword -> logical field
+    _FIELDS = {
+        "course code": "code",
+        "course name": "name",
+        "course type": "course_type",
+        "course content": "category",
+        "instructor": "instructor",
+        "venue": "venue",
+        "slot": "slot",
+        "division": "division",
+        "restriction": "restrictions",
+    }
+
+    def parse(self, documents: Iterable[str]) -> list[Course]:
+        courses: list[Course] = []
+        for doc in documents:
+            soup = BeautifulSoup(doc, "html.parser")
+            courses.extend(self._parse_doc(soup))
+        return courses
+
+    def _parse_doc(self, soup: BeautifulSoup) -> list[Course]:
+        rows = soup.find_all("tr")
+        colmap = self._find_columns(rows)
+        if not colmap or "slot" not in colmap:
+            return []
+        out = []
+        for tr in rows:
+            if not tr.find("a", href=re.compile("crsedetail")):
+                continue  # only real course rows have the detail link
+            cells = tr.find_all("td", recursive=False)
+            if len(cells) <= colmap["slot"]:
+                continue
+            out.append(self._row_to_course(tr, cells, colmap))
+        return out
+
+    def _find_columns(self, rows: Sequence[Tag]) -> dict[str, int]:
+        for tr in rows:
+            cells = tr.find_all("td", recursive=False)
+            texts = [self._text(td).lower() for td in cells]
+            if any("course code" in t for t in texts):
+                colmap: dict[str, int] = {}
+                for i, t in enumerate(texts):
+                    for kw, field in self._FIELDS.items():
+                        if kw in t and field not in colmap:
+                            colmap[field] = i
+                return colmap
+        return {}
+
+    def _row_to_course(self, tr: Tag, cells: list[Tag], colmap: dict[str, int]) -> Course:
+        def col(field: str) -> str:
+            i = colmap.get(field, -1)
+            return self._text(cells[i]) if 0 <= i < len(cells) else ""
+
+        # Course code: prefer the detail-link text (cleanest), else the column.
+        link = tr.find("a", href=re.compile("crsedetail"))
+        code = self._norm_code(link.get_text() if link else col("code"))
+        slot_cell = col("slot")
+        ri = colmap.get("restrictions", -1)
+        restrictions = self._parse_restrictions(cells[ri]) if 0 <= ri < len(cells) else ()
+        return Course(
+            code=code,
+            name=col("name"),
+            slot=self._first_slot(slot_cell),
+            course_type=col("course_type"),
+            category=col("category"),
+            instructor=col("instructor"),
+            venue=col("venue"),
+            division=col("division"),
+            slot_detail=re.sub(r"\\s+", " ", slot_cell).strip(),
+            restrictions=restrictions,
+        )
+
+    def _parse_restrictions(self, td: Tag) -> tuple[Restriction, ...]:
+        """Parse the nested 'Restrictions' popup table (allow/deny rules)."""
+        out: list[Restriction] = []
+        for t in td.find_all("table"):
+            rows = t.find_all("tr")
+            if not rows:
+                continue
+            header = [self._text(x).lower() for x in rows[0].find_all(["td", "th"])]
+            if not any("batch" in h for h in header):
+                continue  # skip the title table; want the data table
+            idx = {"batch": -1, "department": -1, "program": -1, "allowed": -1, "overridable": -1}
+            for i, h in enumerate(header):
+                for key in idx:
+                    if key in h and idx[key] < 0:
+                        idx[key] = i
+            for r in rows[1:]:
+                cells = [self._text(x) for x in r.find_all(["td", "th"])]
+                if not any(cells):
+                    continue
+                get = lambda k: cells[idx[k]] if 0 <= idx[k] < len(cells) else ""
+                out.append(Restriction(
+                    batch=get("batch"),
+                    dept=get("department"),
+                    program=get("program"),
+                    allowed=get("allowed").lower().startswith("allow"),
+                    overridable=get("overridable").lower().startswith("overrid"),
+                ))
+        return tuple(out)
+
+    @staticmethod
+    def _text(node: Tag) -> str:
+        return html.unescape(node.get_text(" ", strip=True)).replace("\\xa0", " ").strip()
+
+    @staticmethod
+    def _norm_code(s: str) -> str:
+        return re.sub(r"\\s+", " ", html.unescape(s)).strip()
+
+    @staticmethod
+    def _first_slot(slot_cell: str) -> str:
+        # slot cell looks like "7   Fri-7B-11:05.. Wed-7A-.." or "L   Mon-..";
+        # the canonical slot is the leading token before the first day/time.
+        head = re.split(r"[\\s\\-]+", slot_cell.strip(), maxsplit=1)[0]
+        return head.upper()
+
+
+# ----------------------------------------------------------------------------- 
+# Timetable metadata (IIT-B "New General Slot Pattern", Autumn 2026-27)
+# -----------------------------------------------------------------------------
+# slot -> {days, time}. Used by the front-end to show when each slot meets.
+SLOT_INFO: dict[str, dict] = {
+    "1":  {"days": ["Mon", "Tue", "Thu"], "time": "09:30–10:25"},
+    "2":  {"days": ["Mon", "Tue", "Thu"], "time": "10:35–11:30"},
+    "3":  {"days": ["Mon", "Tue", "Thu"], "time": "11:35–12:30"},
+    "4":  {"days": ["Tue", "Thu"],        "time": "08:00–09:25"},
+    "5":  {"days": ["Wed", "Fri"],        "time": "08:00–09:25"},
+    "6":  {"days": ["Wed", "Fri"],        "time": "09:30–10:55"},
+    "7":  {"days": ["Wed", "Fri"],        "time": "11:05–12:30"},
+    "8":  {"days": ["Mon", "Thu"],        "time": "14:00–15:25"},
+    "9":  {"days": ["Mon", "Thu"],        "time": "15:30–16:55"},
+    "10": {"days": ["Tue", "Fri"],        "time": "14:00–15:25"},
+    "11": {"days": ["Tue", "Fri"],        "time": "15:30–16:55"},
+    "12": {"days": ["Mon", "Tue", "Thu"], "time": "17:05–18:00"},
+    "L":  {"days": ["Mon", "Tue", "Wed", "Thu", "Fri"], "time": "lab block (see venue)"},
+}
+
+# Faithful weekly grid: per day, an ordered list of (time-label, slot) cells.
+DAY_GRID: dict[str, list[list[str]]] = {
+    "Mon": [["08:00–09:25", "XE"], ["09:30–10:25", "1"], ["10:35–11:30", "2"],
+            ["11:35–12:30", "3"], ["14:00–15:25", "8"], ["15:30–16:55", "9"],
+            ["17:05–18:00", "12"], ["14:00–17:00", "L"]],
+    "Tue": [["08:00–09:25", "4"], ["09:30–10:25", "1"], ["10:35–11:30", "2"],
+            ["11:35–12:30", "3"], ["14:00–15:25", "10"], ["15:30–16:55", "11"],
+            ["17:05–18:00", "12"], ["14:00–17:00", "L"]],
+    "Wed": [["08:00–09:25", "5"], ["09:30–10:55", "6"], ["11:05–12:30", "7"],
+            ["14:00–17:00", "L"]],
+    "Thu": [["08:00–09:25", "4"], ["09:30–10:25", "1"], ["10:35–11:30", "2"],
+            ["11:35–12:30", "3"], ["14:00–15:25", "8"], ["15:30–16:55", "9"],
+            ["17:05–18:00", "12"], ["14:00–17:00", "L"]],
+    "Fri": [["08:00–09:25", "5"], ["09:30–10:55", "6"], ["11:05–12:30", "7"],
+            ["14:00–15:25", "10"], ["15:30–16:55", "11"], ["14:00–17:00", "L"]],
+}
+
+
+# =============================================================================
+# Schedule & credit heuristics  (MODULAR by design)
+# -----------------------------------------------------------------------------
+# Each uncertain assumption below is isolated in ONE small unit — a single
+# function or table — carrying an ASSUMPTION note: what it assumes and how to
+# change it. \`parse_meetings\` is the ONE reader of \`slot_detail\`; classification,
+# L/T/P, credits and contact hours all build on the meeting dicts it returns, so
+# a future Course->Section->Meeting refactor only has to move this one section.
+# =============================================================================
+
+# Weekday order used to sort meetings for display.
+_WEEK_ORDER = {d: i for i, d in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])}
+
+# ASSUMPTION: \`slot_detail\` packs meetings as repeated
+#   "<slot> Day-Code-HH:MM:SS-HH:MM:SS-Room" segments; a room may be empty or
+# contain hyphens/colons ("CC 201-SL-1", "Class Room : LA 202"). A meeting ends
+# where the next "Day-Code-time" begins (or at end of string). To support a
+# different ASC layout, change ONLY this regex and parse_meetings().
+_MEETING_RE = re.compile(
+    r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun)-([0-9A-Za-z]+)-"
+    r"(\\d{1,2}:\\d{2})(?::\\d{2})?-(\\d{1,2}:\\d{2})(?::\\d{2})?-"
+    r"(.*?)(?=(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)-[0-9A-Za-z]+-\\d{1,2}:\\d{2}|$)",
+    re.S,
+)
+
+
+def parse_meetings(slot_detail: str, slot: str = "") -> list[dict]:
+    """THE single reader of \`slot_detail\` -> list of meeting dicts.
+
+    Each meeting is \`\`{"day","code","start","end","room","slot","kind"}\`\`. The
+    meeting's *kind* is taken from the ROW's \`\`slot\`\` (the source of truth), NOT
+    the inner code: an \`\`X\`\` row is a tutorial even when its inner code is numeric
+    (e.g. MA 419's \`\`X Thu-3C-...\`\`). Everything schedule-related (grid placement,
+    clash checks, credits, contact hours) derives from these dicts, so this is the
+    one function a future refactor must move.
+    """
+    kind = slot_kind(slot)
+    out: list[dict] = []
+    for day, code, start, end, room in _MEETING_RE.findall(slot_detail or ""):
+        out.append({
+            "day": day,
+            "code": code.upper(),
+            "start": _hhmm(start),
+            "end": _hhmm(end),
+            "room": _clean_room(room),
+            "slot": slot,
+            "kind": kind,
+        })
+    return out
+
+
+def _hhmm(t: str) -> str:
+    """'11:35:00' or '9:05' -> 'HH:MM' (zero-padded hour)."""
+    h, _, rest = t.partition(":")
+    return f"{int(h):02d}:{rest[:2]}"
+
+
+def _clean_room(room: str) -> str:
+    """Tidy a venue string (collapse spaces, drop the 'Class Room :' label)."""
+    room = re.sub(r"\\s+", " ", room).strip(" -")
+    return re.sub(r"^Class\\s*Room\\s*:\\s*", "", room, flags=re.I).strip()
+
+
+# ASSUMPTION: a course component's kind is named by the ROW's *slot* — "X" is a
+# tutorial, "L" a lab/practical, a numeric slot a lecture. (Inner meeting codes
+# are unreliable: MA 419's tutorial row is slot "X" but packs code "3C".) Change
+# this ONE function if a department uses other slot conventions.
+def slot_kind(slot: str) -> str:
+    s = (slot or "").strip().upper()
+    if s == "X":
+        return "tutorial"
+    if s == "L":
+        return "lab"
+    if s[:1].isdigit():
+        return "lecture"
+    return "other"
+
+
+# ASSUMPTION: report weekly hours as whole numbers. 55-/85-min slot blocks sum to
+# fractions (2.75, 2.83, 2.92); round to the nearest integer (half up). This is
+# the ONE rounding rule for L, P and displayed contact hours — edit here.
+def round_hours(hours: float) -> int:
+    return int(hours + 0.5)
+
+
+# ASSUMPTION: contact hours = summed span (end - start) of the distinct meetings.
+def meeting_hours(m: dict) -> float:
+    def mins(t: str) -> int:
+        h, _, mm = t.partition(":")
+        return int(h) * 60 + int(mm or 0)
+    return max(0.0, (mins(m["end"]) - mins(m["start"])) / 60.0)
+
+
+# ASSUMPTION: IIT-B credit rule  C = 2L + 2T + P, where (see course_credits)
+#   L = rounded weekly LECTURE hours, T = 1 if any tutorial, P = rounded weekly
+#   LAB hours. The formula lives in exactly ONE place — edit this expression.
+def estimate_credits(lectures: int, tutorials: int, practicals: int) -> int:
+    return 2 * lectures + 2 * tutorials + practicals
+
+
+# ASSUMPTION: some course *types* carry fixed institute credits regardless of
+# slots (usually the slot-less entries). One table + one detector, so the numbers
+# are trivial to edit. Applied BEFORE the L-T-P formula (see course_credits).
+COURSE_TYPE_CREDITS = {
+    "seminar": 4,   # Seminar
+    "rnd": 6,       # R&D / research / project work (BTP, stage projects, M.S. R&D)
+}
+
+
+def _type_credit_override(name: str, ctype: str, has_slots: bool) -> int | None:
+    """Fixed credits for special course types, else None (fall back to formula)."""
+    hay = f"{name} {ctype}".lower()
+    if "seminar" in hay:
+        return COURSE_TYPE_CREDITS["seminar"]
+    if any(k in hay for k in ("r&d", "r & d", "rnd", "research")):
+        return COURSE_TYPE_CREDITS["rnd"]
+    # "project" is a common word -> only treat *slot-less* project entries as R&D
+    if "project" in hay and not has_slots:
+        return COURSE_TYPE_CREDITS["rnd"]
+    return None
+
+
+# ASSUMPTION: the plannable unit is (course code + division). Divisions differ
+# in time, so each is planned independently. To plan per-course instead, change
+# ONLY this function (e.g. \`\`return code\`\`); the UI follows it.
+def plannable_key(code: str, division: str) -> str:
+    return f"{code} \\u00b7 {division}" if division else code
+
+
+def _section_hours(meetings: Iterable[dict], kind: str) -> float:
+    """Weekly hours of ONE section: the summed duration of its distinct \`kind\`
+    meetings (deduped by day+time so room-batch duplicates don't inflate it)."""
+    seen, total = set(), 0.0
+    for m in meetings:
+        if m["kind"] != kind:
+            continue
+        k = (m["day"], m["start"], m["end"])
+        if k not in seen:
+            seen.add(k)
+            total += meeting_hours(m)
+    return total
+
+
+# ASSUMPTION: "a representative section" = the MOST COMMON rounded weekly hours
+# across a course's divisions (ties -> the smaller, conservative). Divisions of
+# one course should match; when they don't (a division schedules an extra block),
+# this stops a single outlier from inflating the whole course. Change this ONE
+# function to prefer max/min/median instead.
+def _representative_hours(per_division_hours: Iterable[float]) -> int:
+    rounded = [round_hours(h) for h in per_division_hours if h > 0]
+    if not rounded:
+        return 0
+    best, best_n = 0, -1
+    for v in sorted(set(rounded)):        # ascending -> ties keep the smaller value
+        n = rounded.count(v)
+        if n > best_n:
+            best, best_n = v, n
+    return best
+
+
+def course_credits(rows: Sequence[Course]) -> dict:
+    """Credits are a COURSE property (division-invariant) — computed once per code.
+
+    L = representative weekly LECTURE hours (rounded), T = 1 if the course has ANY
+    tutorial (slot X), P = representative weekly LAB hours (rounded); credits =
+    2L + 2T + P — unless a course-type override (Seminar/R&D) applies. Using
+    rounded *hours* (not meeting counts), taken from a representative section,
+    makes every division of a course share the SAME credits: MA 105 -> 8 for
+    D1..D4, MA 419 -> 8.
+    """
+    # meetings grouped per division, so "a section" == one division's component
+    by_div: dict[str, list[dict]] = {}
+    for c in rows:
+        by_div.setdefault(c.division, []).extend(parse_meetings(c.slot_detail, c.slot))
+    L = _representative_hours(_section_hours(ms, "lecture") for ms in by_div.values())
+    P = _representative_hours(_section_hours(ms, "lab") for ms in by_div.values())
+    has_tut = any(m["kind"] == "tutorial" for ms in by_div.values() for m in ms)
+    has_slots = any(ms for ms in by_div.values())
+    T = 1 if has_tut else 0
+    rep = rows[0]
+    override = _type_credit_override(rep.name, rep.course_type, has_slots)
+    credits = override if override is not None else estimate_credits(L, T, P)
+    return {"L": L, "T": T, "P": P, "credits": credits,
+            "ltp": "" if override is not None else f"{L}-{T}-{P}",
+            "credit_src": "type" if override is not None else "formula"}
+
+
+def _dedupe_meetings(meetings: Iterable[dict]) -> list[dict]:
+    """Collapse meetings sharing (day, slot, code, start, end), keeping every room.
+
+    Keying on the row \`\`slot\`\` too keeps a lecture and a same-timed tutorial
+    distinct, while still folding the many room-batch tutorial rows (e.g. MA 105's
+    ~9 \`\`X\`\` rows) into a single meeting that lists its rooms.
+    """
+    by_key: dict[tuple, dict] = {}
+    for m in meetings:
+        k = (m["day"], m.get("slot", ""), m["code"], m["start"], m["end"])
+        d = by_key.get(k)
+        if d is None:
+            d = {"day": m["day"], "code": m["code"], "start": m["start"], "end": m["end"],
+                 "slot": m.get("slot", ""), "kind": m["kind"], "rooms": []}
+            by_key[k] = d
+        if m["room"] and m["room"] not in d["rooms"]:
+            d["rooms"].append(m["room"])
+    return sorted(by_key.values(), key=lambda x: (_WEEK_ORDER.get(x["day"], 9), x["start"]))
+
+
+def build_units(courses: Sequence[Course]) -> dict[str, dict]:
+    """Group flat rows into plannable units (course+division) and summarise each.
+
+    THE one place meetings are aggregated across a unit's rows, so the front-end
+    renders one entry per division instead of the ~40 duplicated MA 105 rows.
+    Credits come from course_credits (division-invariant), so every division of a
+    course shows the same credits + L-T-P triple.
+    """
+    # credits are a COURSE property -> compute once per code, share across divisions
+    by_code: dict[str, list[Course]] = {}
+    for c in courses:
+        by_code.setdefault(c.code, []).append(c)
+    cred_by_code = {code: course_credits(rows) for code, rows in by_code.items()}
+
+    groups: dict[str, list[Course]] = {}
+    for c in courses:
+        groups.setdefault(plannable_key(c.code, c.division), []).append(c)
+    units: dict[str, dict] = {}
+    for key, rows in groups.items():
+        meetings = _dedupe_meetings(m for c in rows for m in parse_meetings(c.slot_detail, c.slot))
+        cc = cred_by_code[rows[0].code]
+        rep = rows[0].as_dict()
+        units[key] = {
+            "key": key,
+            "code": rep["code"], "name": rep["name"], "dept": rep["dept"],
+            "number": rep["number"], "level": rep["level"], "type": rep["type"],
+            "category": rep["category"], "advanced": rep["advanced"],
+            "instructor": rep["instructor"], "source": rep["source"],
+            "division": rep["division"], "restrictions": rep["restrictions"],
+            "slots": sorted({c.slot for c in rows if c.slot}),
+            "meetings": meetings,
+            "L": cc["L"], "T": cc["T"], "P": cc["P"], "ltp": cc["ltp"],
+            "est_credits": cc["credits"], "credit_src": cc["credit_src"],
+            "contact_hours": round_hours(sum(meeting_hours(m) for m in meetings)),
+            "sections": len(rows),
+        }
+    return units
+
+
+# -----------------------------------------------------------------------------
+# Academic year (data-driven base year for the front-end)
+# -----------------------------------------------------------------------------
+def _extract_academic_year(raw_html: str) -> int | None:
+    """Best-effort academic *base* year (entry year of the incoming 1st-years).
+
+    ASC labels a year range as e.g. "2026-2027"; the base year is the first
+    number (2026). Sources are tried in order of reliability:
+
+    1. the ASC form's selected year option: \`\`<option selected value=2026>\`\`
+    2. the "Running courses for year 2026-2027" banner
+    3. any \`\`20XX-20YY\`\` range near the top of the page
+    4. the SingleFile "saved date" comment (weak: the calendar save year)
+
+    Returns \`\`None\`\` when nothing plausible is found. Both the outer document
+    and any decoded SingleFile data-URI frames are searched.
+    """
+    docs = list(SingleFileSource(raw_html).documents())
+    combined = "\\n".join([raw_html, *docs])
+    # 1. the form's selected <option> (tolerate either attribute order / quoting)
+    for pat in (r"<option[^>]*\\bselected\\b[^>]*\\bvalue\\s*=\\s*[\\"']?(20\\d{2})",
+                r"<option[^>]*\\bvalue\\s*=\\s*[\\"']?(20\\d{2})[\\"']?[^>]*\\bselected\\b"):
+        m = re.search(pat, combined, re.I)
+        if m:
+            return int(m.group(1))
+    # 2. the "... for year 2026-2027 ..." banner
+    m = re.search(r"year\\s+(20\\d{2})\\s*[-\\u2013\\u2014]\\s*20\\d{2}", combined, re.I)
+    if m:
+        return int(m.group(1))
+    # 3. a 20XX-20YY range near the top (avoid batch years deep in restriction tables)
+    near_top = raw_html[:6000] + ("\\n" + docs[0][:6000] if docs else "")
+    m = re.search(r"(20\\d{2})\\s*[-\\u2013\\u2014/]\\s*20\\d{2}", near_top)
+    if m:
+        return int(m.group(1))
+    # 4. SingleFile "saved date: ... 2026 ..." comment (last resort)
+    m = re.search(r"saved date:[^<\\n]*?(20\\d{2})", combined, re.I)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def _pick_year(years: Iterable[int | None]) -> int | None:
+    """Reconcile academic years across pages: most-common, ties -> latest year."""
+    from collections import Counter
+    vals = [y for y in years if y is not None]
+    if not vals:
+        return None
+    counts = Counter(vals)
+    top = max(counts.values())
+    return max(y for y, c in counts.items() if c == top)
+
+
+# -----------------------------------------------------------------------------
+# Exporters
+# -----------------------------------------------------------------------------
+def _payload(catalog: CourseCatalog, meta: dict | None = None) -> dict:
+    """The canonical front-end payload: courses + plannable units + metadata.
+
+    \`\`courses\`\` stays a flat per-row list (unchanged shape + new schedule fields)
+    for back-compat; \`\`units\`\` groups those rows into plannable (course+division)
+    units with aggregated meetings and estimated credits — the UI renders those
+    so uncertain heuristics stay in this one file. \`\`meta\`\` carries page-level
+    facts, e.g. \`\`{"academic_year": 2026}\`\` (\`\`None\`\` when unknown).
+    """
+    courses = list(catalog)
+    units = build_units(courses)
+    course_dicts = []
+    for c in courses:
+        d = c.as_dict()
+        u = units.get(d["unit_key"])
+        if u:  # surface the unit's (division-invariant) credit/contact estimate on each row too
+            d["est_credits"] = u["est_credits"]
+            d["contact_hours"] = u["contact_hours"]
+            d["ltp"] = u["ltp"]
+            d["credit_src"] = u["credit_src"]
+        course_dicts.append(d)
+    return {
+        "courses": course_dicts,
+        "units": units,
+        "slot_info": SLOT_INFO,
+        "day_grid": DAY_GRID,
+        "meta": meta or {"academic_year": None},
+    }
+
+
+def export_json(catalog: CourseCatalog, meta: dict | None = None) -> str:
+    """Serialize a catalog to JSON (courses + slot/grid + page metadata)."""
+    import json
+    return json.dumps(_payload(catalog, meta), ensure_ascii=False, indent=1)
+
+
+def _js_backtick(src: str) -> str:
+    """Escape text for embedding inside a JS template literal (backticks).
+
+    Lossless — the JS engine restores the exact bytes. We escape backslashes,
+    backticks and \`\`\${\`\` (template-literal syntax), and \`\`<\/\`\` so the embedded
+    source can't prematurely close the surrounding <script> tag.
+    """
+    return (src.replace("\\\\", "\\\\\\\\")
+               .replace("\`", "\\\\\`")
+               .replace("\${", "\\\\\${")
+               .replace("<\/", "<\\\\/"))
+
+
+def build_site(catalog: CourseCatalog, out_html: str | Path,
+               template: str | Path | None = None,
+               meta: dict | None = None, cdn: bool = False) -> Path:
+    """Render the self-contained front-end HTML.
+
+    The page runs THIS parser in the browser via Pyodide, so we embed the full
+    text of this module (single source of truth) for it to import at runtime.
+    \`\`catalog\`\` is inlined as the initial dataset; an empty catalog is fine — the
+    user drag-drops ASC .html pages in the page and they're parsed live.
+    \`\`meta\`\` (e.g. \`\`{"academic_year": 2026}\`\`) is inlined so the UI can derive
+    its base year from the page rather than a hardcoded constant.
+
+    \`\`cdn=False\`\` (default) keeps the fully-offline build that boots Pyodide from
+    the vendored \`\`./pyodide/\`\` folder. \`\`cdn=True\`\` flips the ONE \`\`FORCE_CDN\`\`
+    switch in the template so the page loads Pyodide + bs4 from the CDN/PyPI at
+    runtime — a single emailable file that needs no local folder (but needs net).
+    """
+    import json
+    # Template sits alongside this script (webapp/template.html), resolved via
+    # __file__ so the build is independent of the current working directory.
+    tpl_path = Path(template) if template else _SCRIPT_DIR / "template.html"
+    html_tpl = Path(tpl_path).read_text(encoding="utf-8")
+    # initial dataset as JSON; guard against premature <\/script>
+    blob = json.dumps(_payload(catalog, meta), ensure_ascii=False).replace("<\/", "<\\\\/")
+    # embed this exact module (via __file__) so Pyodide is the one-and-only parser
+    parser_lit = "\`" + _js_backtick(_HERE.read_text(encoding="utf-8")) + "\`"
+    out = (html_tpl
+           .replace("/*__DATA__*/null", blob)
+           .replace('/*__ASCPY__*/""', parser_lit))
+    if cdn:  # hard-select the template's existing CDN code path (skip local files)
+        out = out.replace("/*__FORCE_CDN__*/true", "/*__FORCE_CDN__*/true")
+    out_path = Path(out_html)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(out, encoding="utf-8")
+    return out_path
+
+
+# ----------------------------------------------------------------------------- 
+# Facade
+# -----------------------------------------------------------------------------
+def load(path: str | Path) -> CourseCatalog:
+    """Load one SingleFile ASC page from disk into a queryable CourseCatalog."""
+    text = Path(path).read_text(encoding="utf-8", errors="ignore")
+    return load_text(text, source=Path(path).stem)
+
+
+def load_text(text: str, source: str = "") -> CourseCatalog:
+    """Load one SingleFile ASC page from a raw HTML string (no disk access).
+
+    Same parser as :func:\`load\`, but takes the HTML directly — this is what the
+    in-browser (Pyodide) build calls on uploaded files. \`\`source\`\` is the tag to
+    fall back on when the department can't be inferred (e.g. the file-name stem).
+    """
+    docs = SingleFileSource(text).documents()
+    courses = ASCParser().parse(docs)
+    tag = _dominant_dept(courses, source)
+    return CourseCatalog(replace(c, source=tag) for c in courses)
+
+
+def load_many(paths: Iterable[str | Path]) -> CourseCatalog:
+    """Load several ASC pages (e.g. one per department) into one merged catalog."""
+    merged: list[Course] = []
+    for p in paths:
+        merged.extend(load(p))
+    return CourseCatalog(merged)
+
+
+def parse_payload(pairs: Iterable[tuple[str, str]]) -> dict:
+    """Parse \`\`(filename, html_text)\`\` pairs into the front-end payload dict.
+
+    Single browser-facing entry point: it runs the exact same parser as the CLI
+    and returns the same shape \`\`build_site\`\` inlines
+    (\`\`{"courses": [...], "slot_info": ..., "day_grid": ..., "meta": ...}\`\`),
+    each course tagged by its file's dominant dept (fallback: the file-name
+    stem). \`\`meta.academic_year\`\` is derived from the page(s) (see
+    :func:\`_extract_academic_year\`), reconciled across files.
+    """
+    merged: list[Course] = []
+    years: list[int | None] = []
+    for name, text in pairs:
+        stem = Path(name).stem if name else ""
+        merged.extend(load_text(text, source=stem))
+        years.append(_extract_academic_year(text))
+    return _payload(CourseCatalog(merged), {"academic_year": _pick_year(years)})
+
+
+def _dominant_dept(courses: Sequence[Course], fallback: str = "") -> str:
+    """Most common department among \`\`courses\`\` (\`\`fallback\`\` if none present)."""
+    depts = [c.dept for c in courses if c.dept]
+    if depts:
+        return max(set(depts), key=depts.count)
+    return fallback
+
+
+# ----------------------------------------------------------------------------- 
+# CLI
+# -----------------------------------------------------------------------------
+def _print_table(catalog: CourseCatalog) -> None:
+    rows = catalog.to_list()
+    if not rows:
+        print("(no matching courses)")
+        return
+    for c in rows:
+        instr = (c.instructor[:30] + "…") if len(c.instructor) > 31 else c.instructor
+        print(f"{c.code:<10} {c.slot:<5} {c.course_type:<8} {c.name[:45]:<45} {instr}")
+    print(f"\\n{len(rows)} course(s).")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description="Query ASC SingleFile course dumps.")
+    ap.add_argument("files", nargs="*", help="Zero or more SingleFile-saved ASC .html pages")
+    ap.add_argument("--in-slot", nargs="+", metavar="S", help="keep courses running in these slots")
+    ap.add_argument("--not-in-slot", nargs="+", metavar="S", help="drop courses running in these slots")
+    ap.add_argument("--dept", nargs="+", metavar="D", help="keep only these departments, e.g. CS ME")
+    ap.add_argument("--code", metavar="REGEX", help="keep codes matching regex, e.g. 'CS.?1' ")
+    ap.add_argument("--number", nargs="+", metavar="N", help="keep these course numbers, e.g. 101 215")
+    ap.add_argument("--distinct", action="store_true", help="collapse duplicate sections")
+    ap.add_argument("--list-slots", action="store_true", help="just list all slots present and exit")
+    ap.add_argument("--json", metavar="OUT", nargs="?", const="-",
+                    help="export filtered courses as JSON (to file, or stdout if omitted)")
+    ap.add_argument("--build", metavar="OUT", nargs="?", const="",
+                    help="build the OFFLINE front-end HTML and exit; OUT is optional and "
+                         "defaults alongside this script (<script_dir>/timetable.html)")
+    ap.add_argument("--cdn", action="store_true",
+                    help="build the ONLINE 'share' HTML (Pyodide from CDN, needs internet); "
+                         "with no explicit --build OUT, writes <script_dir>/timetable-share.html")
+    args = ap.parse_args(argv)
+
+    cat = load_many(args.files)
+
+    def _meta_for_files() -> dict:
+        """Page-level academic year across the input files (independent of filters)."""
+        years = (_extract_academic_year(Path(f).read_text(encoding="utf-8", errors="ignore"))
+                 for f in args.files)
+        return {"academic_year": _pick_year(years)}
+
+    if args.list_slots:
+        print("Slots present:", ", ".join(cat.slots()))
+        return 0
+
+    if args.build is not None or args.cdn:
+        # Defaults live ALONGSIDE this script (CWD-independent), so the canonical
+        #   python3 webapp/asc_parser.py --build   -> <script_dir>/timetable.html
+        #   python3 webapp/asc_parser.py --cdn     -> <script_dir>/timetable-share.html
+        # work from anywhere; an explicit \`--build OUT\` always wins.
+        if args.build:                       # explicit OUT path given
+            out_name = args.build
+        elif args.cdn:                       # --cdn with no explicit OUT -> share file
+            out_name = str(_SCRIPT_DIR / "timetable-share.html")
+        else:                                # bare --build -> offline default
+            out_name = str(_SCRIPT_DIR / "timetable.html")
+        meta = _meta_for_files()
+        out = build_site(cat, out_name, meta=meta, cdn=args.cdn)
+        kind = "ONLINE share build" if args.cdn else "offline build"
+        print(f"Built front-end ({kind}): {out.resolve()}  ({len(cat)} courses, "
+              f"academic year: {meta['academic_year'] or 'n/a'})")
+        if args.cdn:
+            # Self-contained single file: loads Pyodide from the CDN and installs
+            # bs4 from PyPI at runtime -> works by double-click, but NEEDS INTERNET.
+            print("  NOTE: this share file needs INTERNET (loads Pyodide/bs4 from the CDN). "
+                  "Email/share the single .html — no ./pyodide/ folder required.")
+        else:
+            # Pyodide is vendored for offline use, but browsers block file:// module
+            # fetches, so a plain double-click falls back to the CDN (needs internet).
+            # For true offline, serve the folder over http -- webapp/serve.py does
+            # this (and opens the page for you).
+            print("  Offline: python3 webapp/serve.py   (serves it + opens your browser)")
+            print(f"           or: cd {out.resolve().parent} && python3 -m http.server 8000 "
+                  f"then open http://localhost:8000/{out.name}")
+        return 0
+
+    if args.in_slot:
+        cat = cat.in_slot(*args.in_slot)
+    if args.not_in_slot:
+        cat = cat.not_in_slot(*args.not_in_slot)
+    if args.dept:
+        cat = cat.in_dept(*args.dept)
+    if args.code:
+        cat = cat.code_matches(args.code)
+    if args.number:
+        cat = cat.numbers(*args.number)
+    if args.distinct:
+        cat = cat.distinct()
+
+    if args.json is not None:
+        payload = export_json(cat, _meta_for_files())
+        if args.json == "-":
+            print(payload)
+        else:
+            Path(args.json).write_text(payload, encoding="utf-8")
+            print(f"Wrote {len(cat)} courses to {args.json}")
+        return 0
+
+    _print_table(cat.sort())
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+`;
+/* Pyodide runtime: prefer the LOCAL vendored copy (fully offline — no CDN/PyPI);
+   fall back to the CDN only if the local files can't be reached. (Some browsers
+   block file:// fetches of .wasm/.mjs; if so, serve the folder over http — see
+   the offline tip printed by `python3 webapp/asc_parser.py --build`.) */
+const PYODIDE_VERSION = "v314.0.2";
+const PYODIDE_CDN = `https://cdn.jsdelivr.net/pyodide/${PYODIDE_VERSION}/full/`;
+const PYODIDE_LOCAL = new URL("pyodide/", document.baseURI).href;
+/* Build switch: the offline `--build` leaves this false (boot local, fall back to
+   CDN). The `--build … --cdn` share build flips it to true so the page loads
+   Pyodide + bs4 straight from the CDN/PyPI — one emailable file, no local folder. */
+const FORCE_CDN = /*__FORCE_CDN__*/true;
+/* BeautifulSoup4 + its deps, vendored next to pyodide/ and installed from these
+   local wheels (deps=false → guaranteed no runtime network). */
+const BS4_WHEELS = ["beautifulsoup4-4.14.3-py3-none-any.whl",
+                    "soupsieve-2.8.3-py3-none-any.whl",
+                    "typing_extensions-4.15.0-py3-none-any.whl"];
+const DAYS = ["Mon","Tue","Wed","Thu","Fri"];
+const LS = {hidden:"asc_hidden", profile:"asc_profile", dataset:"asc_dataset",
+            plan:"asc_plan", credits:"asc_credit_override",
+            busy:"asc_busy_slots",      // external fixed commitments (slots the user is busy in)
+            cores:"asc_cores"};         // confirmed core course codes (pinned in the plan)
+
+/* ---------- dataset (mutable: starts from cache/preload, grows via uploads) ---------- */
+let files = [];        // [{id,name,dept,count,courses:[...],units:{...},show}] — one per uploaded file
+let COURSES = [];      // active flat rows = concat of shown files' courses (kept for eligibility etc.)
+let UNITS = [];        // active plannable units (course+division) — the primary render/plan entity
+let SLOT_INFO = {}, DAY_GRID = {};                 // slot metadata (from asc_parser, via payload)
+let DEPTS = [], LEVELS = [], TYPES = [], SLOT_ORDER = [], DEPT_FULL = {};
+let fileSeq = 0;
+
+function load(k,def){try{return JSON.parse(localStorage.getItem(k))??def}catch(e){return def}}
+function save(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+
+/* ---------- derive helpers ---------- */
+function typeBucket(t){
+  t=(t||"").toLowerCase();
+  if(t.includes("lab")) return "Lab";
+  if(t.includes("seminar")) return "Seminar";
+  if(t.includes("project")) return "Project";
+  if(t.includes("theory")) return "Theory";
+  return "Other";
+}
+function esc(s){return (s||"").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[m]));}
+
+/* map dept code (e.g. CS) -> full restriction dept name (e.g. Computer Science and Engineering) */
+function computeDeptFull(){
+  const tally={};
+  for(const c of COURSES){
+    for(const r of (c.restrictions||[])){
+      if(r.allowed && r.dept && r.dept!=="ALL"){
+        (tally[c.dept]=tally[c.dept]||{})[r.dept]=((tally[c.dept]||{})[r.dept]||0)+1;
+      }
+    }
+  }
+  const out={};
+  for(const d in tally) out[d]=Object.entries(tally[d]).sort((a,b)=>b[1]-a[1])[0][0];
+  return out;
+}
+
+/* eligibility from restriction rules given the user's profile */
+function eligibility(c){
+  const rs=c.restrictions||[];
+  if(!rs.length) return "open";
+  if(!profile.batch || !profile.dept) return "unknown";
+  const full=DEPT_FULL[profile.dept]||"";
+  const m=r=>(r.batch==="ALL"||r.batch===profile.batch)
+          &&(r.dept==="ALL"||!full||r.dept===full)
+          &&(r.program==="ALL"||!profile.prog||r.program===profile.prog);
+  const allow=rs.filter(r=>r.allowed&&m(r));
+  if(allow.length) return "eligible";
+  const deny=rs.filter(r=>!r.allowed&&m(r));
+  if(deny.length) return deny.every(d=>d.overridable)?"restrictedov":"restricted";
+  return "restricted"; // allow-list model, user not listed
+}
+
+/* ASSUMPTION: turn a course's parsed allow/deny restriction rules + the profile
+   into plain-English reasons for a restricted/override verdict, naming the
+   profile field that clashes (dept / program / batch). ALL wording + logic live
+   in this ONE function — edit here to change phrasing or matching. Returns
+   [{field, text}]; empty when the course is eligible/open/unknown (no noise). */
+function restrictionReasons(u){
+  const elig=u._elig||eligibility(u);
+  if(elig!=="restricted"&&elig!=="restrictedov") return [];
+  const rs=u.restrictions||[], full=DEPT_FULL[profile.dept]||profile.dept||"";
+  const hit=r=>(r.batch==="ALL"||r.batch===profile.batch)
+            &&(r.dept==="ALL"||!full||r.dept===full)
+            &&(r.program==="ALL"||!profile.prog||r.program===profile.prog);
+  const who=r=>{const p=[];                       // compact "who a rule targets"
+    if(r.dept&&r.dept!=="ALL")p.push(r.dept);
+    if(r.program&&r.program!=="ALL")p.push(r.program);
+    if(r.batch&&r.batch!=="ALL")p.push("batch "+r.batch); return p.join(" \u00b7 ");};
+  const uniq=a=>[...new Set(a.filter(x=>x&&x!=="ALL"))];
+  const out=[];
+  // 1) a SPECIFIC deny rule (names a dept/program/batch) is a clear reason on its own
+  for(const r of rs.filter(r=>!r.allowed&&hit(r)&&who(r)))
+    out.push({field:"", text:`Explicitly denied to ${who(r)}${r.overridable?" (overridable)":""}`});
+  // 2) allow-list model (also covers ASC's blanket "deny ALL" + specific allows):
+  //    say who IS allowed and name the profile field that clashes
+  const allow=rs.filter(r=>r.allowed);
+  if(allow.length){
+    const depts=uniq(allow.map(r=>r.dept)), progs=uniq(allow.map(r=>r.program)), batches=uniq(allow.map(r=>r.batch));
+    if(depts.length&&full&&!depts.includes(full)) out.push({field:"dept", text:`Open to ${depts.join(", ")} only`});
+    if(progs.length&&profile.prog&&!progs.includes(profile.prog)) out.push({field:"program", text:`Programme ${progs.join(", ")} only`});
+    if(batches.length&&profile.batch&&!batches.includes(profile.batch)) out.push({field:"batch", text:`Open to batch ${batches.join(", ")} only`});
+    if(!out.length) out.push({field:"", text:`Open only to: ${allow.map(who).filter(Boolean).join("; ")||"a specific group"}`});
+  }
+  // 3) blanket deny with nothing more specific to say
+  if(!out.length) out.push({field:"", text: rs.some(r=>!r.allowed&&hit(r))
+    ? "Not open to your profile" : "Your profile isn't in the allowed list"});
+  return out;
+}
+/* "ME \u00b7 B.Tech. \u00b7 2024 entry" — the profile we're matching against */
+function profileStr(){const p=[];
+  if(profile.dept)p.push(profile.dept);
+  if(profile.prog)p.push(profile.prog);
+  if(profile.batch)p.push(profile.batch+" entry");
+  return p.join(" \u00b7 ")||"(set your profile)";}
+/* one-line summary for tooltips + detail rows (empty when eligible) */
+function restrictText(u){const rr=restrictionReasons(u); if(!rr.length) return "";
+  return `Restricted \u2014 ${rr.map(r=>r.text).join("; ")}. Your profile: ${profileStr()}.`;}
+/* a small visible reason line (used in List / My Plan); "" when eligible */
+function restrictNote(u){const rr=restrictionReasons(u); if(!rr.length) return "";
+  return `<div class="restrict-note" title="${esc(restrictText(u))}">\u26a0 ${esc(rr.map(r=>r.text).join("; "))} <span class="muted">\u2014 you: ${esc(profileStr())}</span></div>`;}
+
+/* year of study -> entry/batch year (restrictions key off batch year).
+   BASE_YEAR is the entry year of the incoming 1st-years and is DERIVED from the
+   uploaded ASC page(s) (payload meta.academic_year). So "3rd year ≈ 2024 entry"
+   is computed from the data, not hardcoded. FALLBACK_BASE_YEAR is used only when
+   no loaded page exposes an academic year. */
+const FALLBACK_BASE_YEAR = 2026;
+let BASE_YEAR = FALLBACK_BASE_YEAR;
+const batchFromYear = y => y ? String(BASE_YEAR - (y - 1)) : ""; // 1st->BASE, 2nd->BASE-1, …
+/* reconcile academic years across loaded files: most-common, ties -> latest */
+function pickAcademicYear(years){
+  const vals = years.filter(y => Number.isFinite(y));
+  if(!vals.length) return null;
+  const c={}; vals.forEach(y=>{c[y]=(c[y]||0)+1;});
+  const top=Math.max(...Object.values(c));
+  return Math.max(...Object.keys(c).filter(y=>c[y]===top).map(Number));
+}
+function recomputeBaseYear(){ // follow the loaded page(s); fall back to the constant
+  const shown = files.filter(f=>f.show);
+  const y = pickAcademicYear((shown.length?shown:files).map(f=>f.academic_year));
+  BASE_YEAR = (y!=null) ? y : FALLBACK_BASE_YEAR;
+  profile.batch = batchFromYear(+profile.year);   // keep eligibility in sync
+}
+
+/* ---------- state ---------- */
+let hidden = load(LS.hidden, {});              // {code: note}
+let plan = load(LS.plan, {});                  // {unitKey: true}  — selected sections
+let overrides = load(LS.credits, {});          // {unitKey: number} — manual credit overrides
+let cores = new Set(load(LS.cores, []));       // confirmed core course codes (pinned in plan)
+let coreSuggestOpen = false;                   // whether the core-suggestion chips are shown
+let profile = load(LS.profile, {});
+profile.year = profile.year || "3";            // year of study (1..5); default: 3rd-year
+profile.dept = profile.dept || ""; profile.prog = profile.prog || "";
+profile.batch = batchFromYear(+profile.year);  // derived; eligibility keys off batch year
+const state = {
+  q:"", view:"grid",
+  depts:new Set(), levels:new Set(), types:new Set(), // shown-sets (filled by applyDataset)
+  busy:new Set(load(LS.busy, [])),  // external fixed commitments (persisted); also drives "hide busy-slot"
+  hideBusy:false, hideInelig:false, hideOtherAdv:false, hideCore:false, distinct:true,
+};
+function saveBusy(){save(LS.busy,[...state.busy]);}   // persist external commitments on every change
+
+function homeDept(){return profile.dept;}
+function annotate(u){
+  u._elig=eligibility(u);
+  u._other=homeDept() && u.dept!==homeDept();
+  u._otherAdv=u._other && u.advanced;
+}
+
+/* =====================================================================
+   MODULAR UI heuristics — each block is one small, single-responsibility
+   unit with an ASSUMPTION note (what it assumes + how to change it). The
+   credit/meeting math itself lives in asc_parser.py (single source of
+   truth); these only decide *placement/selection* in the UI.
+   ===================================================================== */
+
+/* A meeting's slot family = its ROW slot (the source of truth: "X" tutorial,
+   "L" lab, numeric lecture). `slotOf` is only a fallback for older cached
+   meetings that predate the per-meeting `slot` (derives from the inner code). */
+function slotOf(code){const m=/^(\d+|[A-Za-z])/.exec(code||""); return m?m[1].toUpperCase():"";}
+function mslot(m){return (m && m.slot!=null && m.slot!=="") ? m.slot : slotOf(m&&m.code||"");}
+
+/* ASSUMPTION: a unit is "unscheduled" when it has no parsed meetings (empty slot,
+   e.g. seminars/projects). Change this ONE predicate to redefine the bucket. */
+function isUnscheduled(u){return !u.meetings || u.meetings.length===0;}
+
+/* ASSUMPTION (one-line switch): X tutorials go in a separate "Tutorials & extras"
+   area, NOT the main grid. Return `true` to place them in the grid at their real
+   time instead. Lectures & labs always show in the grid. */
+function showsInGrid(m){return m.kind!=="tutorial";}
+
+/* ASSUMPTION: "core / 1st-year" = course level 0xx or 1xx (number < 200). Edit
+   this ONE rule to change what the "Hide core / 1st-year" filter bulk-hides. */
+function isCoreFirstYear(u){return u.level==="0xx" || u.level==="1xx";}
+
+/* ASSUMPTION: the plannable unit identity is the (course+division) key from
+   asc_parser.plannable_key. To plan per-course instead, return `u.code` here
+   (and the parser's plannable_key) — everything else follows. */
+function planKeyOf(u){return u.key;}
+
+/* ASSUMPTION: a unit's credits = manual override if set, else the parser's
+   data-derived estimate. Override logic is isolated to these two helpers. */
+function creditOf(u){const o=overrides[u.key]; return (o!=null && o!=="")?Number(o):(u.est_credits||0);}
+function setOverride(key,val){
+  if(val===""||val==null||isNaN(Number(val))) delete overrides[key]; else overrides[key]=Number(val);
+  save(LS.credits,overrides); refresh();
+}
+
+/* ASSUMPTION: two meetings clash iff same day and overlapping [start,end). Change
+   here to (e.g.) ignore tutorials or add a travel-gap buffer. */
+function toMin(t){const [h,m]=(t||"0:0").split(":");return (+h)*60+(+m);}
+function meetingsOverlap(a,b){
+  return a.day===b.day && toMin(a.start)<toMin(b.end) && toMin(b.start)<toMin(a.end);
+}
+function unitsClash(a,b){
+  for(const x of (a.meetings||[])) for(const y of (b.meetings||[])) if(meetingsOverlap(x,y)) return true;
+  return false;
+}
+
+/* ---------- filtering (operates on UNITS) ---------- */
+function unitBusy(u){return (u.meetings||[]).some(m=>state.busy.has(mslot(m)));}
+function passes(u){
+  if(hidden[u.code]!==undefined) return false;
+  if(!state.depts.has(u.dept)) return false;
+  if(!state.levels.has(u._lvl)) return false;
+  if(!state.types.has(u._bucket)) return false;
+  if(state.hideBusy && unitBusy(u)) return false;
+  if(state.hideInelig && u._elig==="restricted") return false;
+  if(state.hideOtherAdv && u._otherAdv) return false;
+  if(state.hideCore && isCoreFirstYear(u)) return false;
+  if(state.q){
+    const q=state.q.toLowerCase();
+    const hay=(u.code+" "+u.code.replace(/\s/g,"")+" "+u.division+" "+u.name+" "+u.instructor).toLowerCase();
+    if(!hay.includes(q)) return false;
+  }
+  return true;
+}
+function filtered(){
+  UNITS.forEach(annotate);
+  return UNITS.filter(passes);
+}
+/* push other-dept-advanced & restricted to the bottom */
+function rank(u){return (u._otherAdv?2:0)+(u._elig==="restricted"?4:0)+(u._elig==="restrictedov"?1:0);}
+function sortForView(us){
+  return us.slice().sort((a,b)=>rank(a)-rank(b)
+    || (a.dept+a.number+a.division).localeCompare(b.dept+b.number+b.division));
+}
+
+/* ---------- badges ---------- */
+function tags(c){
+  let h="";
+  if(c._otherAdv) h+=`<span class="tag other" title="Other department, advanced \u2013 often not allowed">other\u00b7adv</span>`;
+  else if(c._other) h+=`<span class="tag other">other dept</span>`;
+  else if(c.advanced) h+=`<span class="tag adv">advanced</span>`;
+  if(c._elig==="eligible") h+=`<span class="tag eligible">eligible</span>`;
+  else if(c._elig==="restricted") h+=`<span class="tag restricted" title="${esc(restrictText(c)||"Restriction rules exclude your profile")}">restricted</span>`;
+  else if(c._elig==="restrictedov") h+=`<span class="tag restrictedov" title="${esc(restrictText(c)||"Denied but overridable")}">override?</span>`;
+  return h;
+}
+
+/* ---------- views (render UNITS; the grid places by real meeting time) ---------- */
+const WEEKN={Mon:0,Tue:1,Wed:2,Thu:3,Fri:4,Sat:5,Sun:6};
+function pin(u){const on=inPlan(u);
+  return `<span class="pin ${on?'on':''}" title="${on?'Remove from plan':'Add section to plan'}"
+    onclick="event.stopPropagation();togglePlan('${esc(u.key)}')">${on?'\u2713':'\uFF0B'}</span>`;}
+function divBadge(u){return u.division?`<span class="div-badge">${esc(u.division)}</span>`:"";}
+function mlabel(m){return `${m.day} ${m.start}\u2013${m.end}`+
+  (m.rooms&&m.rooms.length?` \u00b7 ${esc(m.rooms.join(", "))}`:"");}
+/* credits + the L-T-P triple (weekly lecture-tutorial-lab hours) — the standard
+   IITB representation, surfaced next to credits so the integer hours read clearly */
+function credLabel(u){const c=creditOf(u);
+  const t=u.ltp?` <span class="ltp" title="L-T-P: weekly lecture-tutorial-lab hours">${esc(u.ltp)}</span>`:"";
+  return c?`<span class="cr" title="Credits (2L+2T+P)">${c} cr</span>${t}`:"";}
+
+function renderGrid(us){
+  // one cell per (day, slot-family, start, end); units at the same time stack together
+  const cells={};
+  for(const u of us) for(const m of (u.meetings||[])){
+    if(!showsInGrid(m)) continue;                       // tutorials -> "extras" area (see predicate)
+    const k=m.day+"|"+mslot(m)+"|"+m.start+"|"+m.end;
+    (cells[k]=cells[k]||{day:m.day,slot:mslot(m),start:m.start,end:m.end,units:[]}).units.push(u);
+  }
+  let h='<div class="grid">';
+  for(const day of DAYS){
+    h+=`<div class="day"><h3>${day}</h3>`;
+    const dc=Object.values(cells).filter(c=>c.day===day).sort((a,b)=>toMin(a.start)-toMin(b.start));
+    if(!dc.length) h+=`<div class="cell"><div class="empty">\u2014</div></div>`;
+    for(const c of dc){
+      // main grid cells are intentionally NOT tinted by state.busy — the separate
+      // "When I'm busy" table (renderBusyTable) is the sole busy indicator.
+      h+=`<div class="cell">
+        <div class="chd"><span class="badge">${esc(c.slot)}</span><span class="time">${c.start}\u2013${c.end}</span></div>`;
+      h+=sortForView(c.units).map(u=>{
+        const dim=u._otherAdv||u._elig==='restricted', planned=inPlan(u), clash=planned&&clashKeys.has(u.key);
+        return `<div class="cc ${dim?'dim':''} ${planned?'planned':''} ${clash?'clash':''} ${isCorePinned(u)?'core':''}">
+          <span class="x" title="Hide this course" onclick="hideCourse('${esc(u.code)}')">\u00d7</span>
+          <div class="code">${pin(u)} ${esc(u.code)} ${divBadge(u)} ${coreBadge(u)} ${tags(u)}</div>
+          <div class="nm">${esc(u.name)}</div><div class="crline">${credLabel(u)}</div>${restrictNote(u)}</div>`;
+      }).join("");
+      h+=`</div>`;
+    }
+    h+=`</div>`;
+  }
+  return h+'</div>';   // extras + unscheduled render in the shared #view-extras block
+}
+
+/* Shared "outside the grid" block. Rendered into #view-extras on EVERY refresh
+   (independent of the active view), so plan highlighting, file visibility and
+   active filters always stay in sync with the grid/plan. */
+function renderExtras(us){return renderTutorials(us)+renderUnscheduled(us);}
+
+/* separated section for X tutorials (kept out of the grid by showsInGrid) */
+function renderTutorials(us){
+  const extra=[];
+  for(const u of us) for(const m of (u.meetings||[])) if(!showsInGrid(m)) extra.push({u,m});
+  if(!extra.length) return "";
+  extra.sort((a,b)=>(WEEKN[a.m.day]??9)-(WEEKN[b.m.day]??9)||toMin(a.m.start)-toMin(b.m.start));
+  return `<div class="subhead" title="Tutorial (slot X) &amp; extra-slot sessions pulled out of the weekly grid so they don't crowd the lecture cells. They still update with your plan and filters.">Tutorials &amp; extras <span class="n">${extra.length}</span>
+      <span class="hint" style="text-transform:none;letter-spacing:0">tutorial / extra-slot sessions shown outside the grid</span></div>
+    <div class="extra-wrap">`+extra.map(({u,m})=>{
+      const planned=inPlan(u), clash=planned&&clashKeys.has(u.key);
+      return `<div class="unit-chip ${planned?'planned':''} ${clash?'clash':''}">${pin(u)}
+        <div class="body"><div class="code">${esc(u.code)} ${divBadge(u)} <span class="badge">${esc(mslot(m))}</span> ${credLabel(u)}</div>
+        <div class="mtg">${mlabel(m)}</div></div></div>`;
+    }).join("")+`</div>`;
+}
+
+/* separated section for courses with no fixed time (empty slot) */
+function renderUnscheduled(us){
+  const uns=sortForView(us.filter(isUnscheduled));
+  if(!uns.length) return "";
+  return `<div class="subhead" title="Courses with no fixed meeting time (seminars, R&amp;D / projects). Credits come from the course-type table.">Unscheduled / no fixed time <span class="n">${uns.length}</span>
+      <span class="hint" style="text-transform:none;letter-spacing:0">no fixed slot \u2014 e.g. seminars &amp; projects</span></div>
+    <div class="extra-wrap">`+uns.map(u=>`<div class="unit-chip ${inPlan(u)?'planned':''}">${pin(u)}
+      <div class="body"><div class="code">${esc(u.code)} ${divBadge(u)} ${credLabel(u)} ${tags(u)}</div>
+      <div class="mtg">${esc(u.name)} \u00b7 ${esc(u.type||"")}</div></div></div>`).join("")+`</div>`;
+}
+function renderSlot(us){
+  // a unit appears under each slot-family it meets in (so MA105 D1 shows once
+  // under its lecture slot and once under X — not ~10 duplicated rows)
+  const bySlot={};
+  for(const u of us) for(const s of new Set((u.meetings||[]).map(mslot))) (bySlot[s]=bySlot[s]||[]).push(u);
+  const order=SLOT_ORDER.concat(Object.keys(bySlot).filter(s=>!SLOT_ORDER.includes(s)).sort());
+  let h=`<table><thead><tr><th>Slot</th><th>Days</th><th>Time</th><th>#</th><th>Courses (by division)</th></tr></thead><tbody>`;
+  for(const s of order){
+    const list=sortForView(bySlot[s]||[]);
+    if(!list.length && !(s in SLOT_INFO)) continue;
+    const info=SLOT_INFO[s]||{days:[],time:""}, busy=state.busy.has(s);
+    h+=`<tr><td class="slotcell"><span class="pill ${busy?"busy":""}">${esc(s)}</span></td>
+      <td class="muted">${(info.days||[]).join(", ")}</td><td class="muted">${info.time||""}</td>
+      <td>${list.length}</td><td>${list.length?list.map(u=>
+        `<span class="pill ${inPlan(u)?'planned':''}" title="${esc(u.instructor)}">${pin(u)} ${esc(u.code)} ${divBadge(u)} \u00b7 ${esc(u.name)} ${tags(u)}</span>`
+      ).join(""):'<span class="empty">\u2014</span>'}</td></tr>`;
+  }
+  return h+`</tbody></table>`;   // unscheduled renders in the shared #view-extras block
+}
+function renderList(us){
+  if(!state.distinct){                                   // "Group sections" OFF -> raw ASC rows
+    const keys=new Set(us.map(u=>u.key));
+    const rows=COURSES.filter(c=>keys.has(c.unit_key))
+      .sort((a,b)=>(a.dept+a.number+a.division).localeCompare(b.dept+b.number+b.division));
+    let h=`<table><thead><tr><th>Code</th><th>Name</th><th>Div</th><th>Slot</th><th>Day / time</th>
+      <th>Type</th><th>Room</th></tr></thead><tbody>`;
+    for(const c of rows){const m=(c.meetings||[])[0];
+      h+=`<tr><td class="code">${esc(c.code)}</td><td>${esc(c.name)}</td><td>${esc(c.division||"\u2014")}</td>
+        <td class="slotcell"><span class="pill">${esc(c.slot||"\u2014")}</span></td>
+        <td class="muted">${m?esc(m.day+" "+m.start+"\u2013"+m.end):"\u2014"}</td>
+        <td class="muted">${esc(typeBucket(c.type))}</td><td class="muted">${m?esc(m.room||""):""}</td></tr>`;}
+    return h+`</tbody></table>`;
+  }
+  us=sortForView(us);
+  let h=`<table><thead><tr><th></th><th>Code</th><th>Name</th><th>Div</th><th>Slots</th><th>Days / time</th>
+    <th title="Estimated credits 2L+2T+P, and L-T-P (weekly lecture-tutorial-lab hours)">Cr \u00b7 L-T-P</th>
+    <th title="Weekly contact hours (rounded)">Hrs</th>
+    <th>Type</th><th>Flags</th><th>Instructor</th></tr></thead><tbody>`;
+  for(const u of us){
+    const planned=inPlan(u), clash=planned&&clashKeys.has(u.key);
+    const times=(u.meetings||[]).map(m=>`${m.day} ${m.start}`).join(", ")||"\u2014";
+    h+=`<tr class="${u._otherAdv||u._elig==='restricted'?'dim':''}">
+      <td>${pin(u)}</td>
+      <td class="code">${esc(u.code)} ${coreBadge(u)}</td><td>${esc(u.name)}${restrictNote(u)}</td>
+      <td>${u.division?esc(u.division):'<span class="muted">\u2014</span>'}</td>
+      <td class="slotcell">${(u.slots||[]).map(s=>`<span class="pill ${state.busy.has(s)?"busy":""}">${esc(s)}</span>`).join("")||"\u2014"}</td>
+      <td class="muted">${esc(times)}</td>
+      <td>${creditOf(u)||"\u2013"}${u.ltp?` <span class="ltp">${esc(u.ltp)}</span>`:''}${clash?' <span class="clashtag">clash</span>':''}</td>
+      <td class="muted">${u.contact_hours||0}</td>
+      <td class="muted">${esc(u._bucket)}</td><td>${tags(u)}</td>
+      <td class="muted">${esc(u.instructor)}</td></tr>`;
+  }
+  h+=`</tbody></table>`;
+  return us.length?h:`<p class="empty">No courses match the current filters.</p>`;
+}
+
+/* ---------- manual hide ---------- */
+function hideCourse(code){
+  const note=prompt("Hiding "+code+". Optional note (e.g. 'prof said no UGs'):","")||"";
+  hidden[code]=note; save(LS.hidden,hidden); refresh();
+}
+function unhide(code){delete hidden[code]; save(LS.hidden,hidden); refresh();}
+function renderHidden(){
+  const codes=Object.keys(hidden);
+  document.getElementById("h-count").textContent=codes.length;
+  document.getElementById("s-hidden").textContent=codes.length;
+  document.getElementById("hiddenList").innerHTML = codes.length? codes.map(code=>{
+    const c=COURSES.find(x=>x.code===code);
+    return `<div class="item"><span class="rowx" onclick="unhide('${esc(code)}')" title="Unhide">\u21ba</span>
+      <b>${esc(code)}</b> <span class="muted">${c?esc(c.name):""}</span>
+      <span class="spacer"></span><span class="muted">${esc(hidden[code]||"")}</span></div>`;
+  }).join("") : `<p class="muted">Nothing hidden. Click \u00d7 on any course to hide it (with an optional note).</p>`;
+}
+
+/* ---------- My Plan (plannable unit = course+division; see planKeyOf) ---------- */
+let clashKeys = new Set();                 // unit keys that clash with another planned unit
+function inPlan(u){return !!plan[planKeyOf(u)];}
+function togglePlan(key){
+  if(plan[key]){
+    delete plan[key];
+    // keep cores + plan consistent: unplanning the last division of a confirmed
+    // core also clears its core status (so no orphan "core" chip lingers)
+    const u=UNITS.find(x=>x.key===key);
+    if(u && cores.has(u.code) && !UNITS.some(x=>x.code===u.code && plan[x.key])){ cores.delete(u.code); saveCores(); }
+  } else plan[key]=true;
+  save(LS.plan,plan); refresh();
+}
+function clearPlan(){
+  if(Object.keys(plan).length && !confirm("Remove everything from My Plan? (also clears pinned cores)")) return;
+  plan={}; cores=new Set(); save(LS.plan,plan); saveCores(); refresh();
+}
+function computeClashes(){                  // pairwise time-overlap among planned units
+  clashKeys=new Set();
+  const ps=UNITS.filter(inPlan);
+  for(let i=0;i<ps.length;i++) for(let j=i+1;j<ps.length;j++)
+    if(unitsClash(ps[i],ps[j])){clashKeys.add(ps[i].key);clashKeys.add(ps[j].key);}
+}
+function renderPlan(){
+  const ps=UNITS.filter(inPlan);
+  const totCred=ps.reduce((s,u)=>s+creditOf(u),0);
+  // contact_hours are already whole numbers (round_hours in the parser) -> integer total
+  const totHrs=ps.reduce((s,u)=>s+(+u.contact_hours||0),0);
+  const nClash=clashKeys.size;
+  document.getElementById("s-plan").textContent=ps.length;
+  document.getElementById("planTotals").innerHTML=
+    `<div class="box"><b>${ps.length}</b><span>sections</span></div>
+     <div class="box"><b>${totCred}</b><span>total credits</span></div>
+     <div class="box"><b>${totHrs}</b><span>weekly contact hrs</span></div>
+     <div class="box ${nClash?"warn":""}"><b>${nClash||0}</b><span>${nClash?"clashing":"no clashes"}</span></div>`;
+  const box=document.getElementById("planList");
+  if(!ps.length){box.innerHTML=`<p class="planhint">Nothing planned yet. Add sections with the <b>\uFF0B</b> button in any view \u2014 each division plans independently. Confirm core courses below to pin them.</p>`;renderBusyTable();return;}
+  // confirmed cores pinned first, then the usual order
+  const ordered=sortForView(ps).sort((a,b)=>(isCorePinned(b)?1:0)-(isCorePinned(a)?1:0));
+  box.innerHTML=ordered.map(u=>{
+    const clash=clashKeys.has(u.key), core=isCorePinned(u);
+    const times=(u.meetings||[]).map(m=>`${m.day} ${m.start}\u2013${m.end}`).join(" \u00b7 ")||"no fixed time";
+    // core items unpin the whole core (removes from cores + plan); electives just leave the plan
+    const rm=core?`unpinCore('${esc(u.code)}')`:`togglePlan('${esc(u.key)}')`;
+    return `<div class="plan-item ${clash?"clash":""} ${core?"core":""}">
+      <span class="pin on" title="${core?'Unpin core (remove)':'Remove from plan'}" onclick="${rm}">${core?'\ud83d\udd12':'\u2713'}</span>
+      <div class="grow"><div class="code">${esc(u.code)} ${divBadge(u)} ${coreBadge(u)} ${u.ltp?`<span class="ltp">${esc(u.ltp)}</span>`:''} ${clash?'<span class="clashtag">clash</span>':''}</div>
+        <div class="meta">${esc(u.name)} \u00b7 ${esc(times)}</div>${restrictNote(u)}</div>
+      <label class="meta" title="Manual credit override (estimate: ${u.est_credits}${u.ltp?', L-T-P '+u.ltp:''})">cr
+        <input class="credit-in" type="number" min="0" step="0.5" value="${creditOf(u)}"
+          onchange="setOverride('${esc(u.key)}',this.value)"></label>
+      <span class="meta">${u.contact_hours||0} h/wk</span>
+    </div>`;
+  }).join("");
+  renderBusyTable();
+}
+
+/* =====================================================================
+   Feature: "WHEN I'M BUSY" — a SEPARATE fixed-width weekly table
+   (weekday columns x IIT-B time-slot rows). This is NOT the main grid,
+   which stays variable-width and unmarked (explicit user constraint).
+   ===================================================================== */
+/* ONE place — the day COLUMNS: weekdays Mon-Fri, plus Sat only if the loaded
+   data actually meets on Saturday. Edit here to change the columns. */
+function busyDays(){
+  const base=["Mon","Tue","Wed","Thu","Fri"];
+  const sat=("Sat" in (DAY_GRID||{})) || UNITS.some(u=>(u.meetings||[]).some(m=>m.day==="Sat"));
+  return sat?[...base,"Sat"]:base;
+}
+/* ONE place — the time-band ROWS. Derived from DAY_GRID (the SAME faithful
+   per-day [time-label, slot] cells the main grid uses), unioned across days and
+   sorted by start time, plus one tutorial (slot X) row (X isn't a fixed DAY_GRID
+   cell). Each row knows, per weekday, which slot meets then. To change the
+   time universe, edit DAY_GRID in asc_parser.py. */
+function busyRows(){
+  const rows=new Map();                             // time-label -> {label, cells:{day:slot}}
+  for(const [day,cells] of Object.entries(DAY_GRID||{}))
+    for(const [label,slot] of cells){
+      if(!rows.has(label)) rows.set(label,{label, cells:{}});
+      rows.get(label).cells[day]=slot;
+    }
+  const arr=[...rows.values()].sort((a,b)=>toMin(a.label.split(/[\u2013-]/)[0])-toMin(b.label.split(/[\u2013-]/)[0]));
+  arr.push({label:"Tutorial", tutorial:true, cells:{}});   // slot X, placed by real meeting day
+  return arr;
+}
+/* ONE place — the busy/clash RULE for a (row, day) cell. Busy = a planned unit
+   meets in this slot+day OR the slot is marked as an external commitment
+   (state.busy). Clash = >=2 planned occupants, a planned occupant already in the
+   time-overlap clash set (clashKeys), or a planned occupant sharing the cell with
+   an external commitment. Returns {state:'none'|'free'|'busy'|'clash', slot, codes, ext}. */
+function busyCellState(row, day){
+  const slot = row.tutorial ? "X" : row.cells[day];
+  if(slot===undefined) return {state:"none"};        // no period here -> white
+  const codes=[]; let clashHit=false;
+  for(const u of UNITS){
+    if(!inPlan(u)) continue;
+    if((u.meetings||[]).some(m=>m.day===day && mslot(m)===slot)){
+      codes.push(u.code); if(clashKeys.has(u.key)) clashHit=true;
+    }
+  }
+  const uniqCodes=[...new Set(codes)], ext=state.busy.has(slot);
+  let st="free";
+  if(uniqCodes.length>=2 || clashHit || (uniqCodes.length && ext)) st="clash";
+  else if(uniqCodes.length || ext) st="busy";
+  return {state:st, slot, codes:uniqCodes, ext};
+}
+function busyRowLabel(row){
+  if(row.tutorial) return "Tutorial (X)";
+  const slots=new Set(Object.values(row.cells));
+  return (slots.size===1 && slots.has("L")) ? row.label+" \u00b7 Lab" : row.label;
+}
+function toggleExternalBusy(s){ state.busy.has(s)?state.busy.delete(s):state.busy.add(s); saveBusy(); refresh(); }
+function renderBusyTable(){
+  const el=document.getElementById("busyTable"); if(!el) return;
+  const days=busyDays(), rows=busyRows();
+  let h=`<table class="busytbl"><thead><tr><th class="rh"></th>${days.map(d=>`<th>${esc(d)}</th>`).join("")}</tr></thead><tbody>`;
+  for(const row of rows){
+    h+=`<tr><th class="rh">${esc(busyRowLabel(row))}</th>`;
+    for(const d of days){
+      const c=busyCellState(row,d);
+      if(c.state==="none"){ h+=`<td class="bt none"></td>`; continue; }
+      const who=c.codes.length? c.codes.join(", ") : (c.ext? "external commitment":"free");
+      const tip=`${d} \u00b7 ${esc(row.label)}${c.slot?` (slot ${c.slot})`:""} \u2014 ${esc(who)}${c.state==="clash"?" \u2014 CLASH":""} \u00b7 click to toggle external`;
+      const txt=c.codes.length ? esc(c.codes[0])+(c.codes.length>1?` +${c.codes.length-1}`:"") : (c.ext?"ext":"");
+      h+=`<td class="bt ${c.state}${c.ext?' ext':''}" title="${tip}" onclick="toggleExternalBusy('${esc(c.slot)}')">${txt}</td>`;
+    }
+    h+=`</tr>`;
+  }
+  el.innerHTML=h+`</tbody></table>`;
+}
+
+/* =====================================================================
+   Feature: SUGGEST -> CONFIRM CORE COURSES  (pinned in the plan)
+   ===================================================================== */
+/* ASSUMPTION (best-effort, UNCERTAIN — always confirm!): a course is "likely
+   core" for the profile when it's in the user's OWN department, its level digit
+   matches the year of study (3rd year -> 3xx), it's a regular Theory course (not
+   lab/seminar/project) and not ASC-tagged advanced, and the profile may take it.
+   Edit this ONE rule; the user can also paste exact core codes to override it. */
+function isLikelyCore(u){
+  if(!profile.dept || !profile.year) return false;
+  if(u.dept!==profile.dept) return false;
+  if(u.level!==profile.year+"xx") return false;
+  if(u.advanced || typeBucket(u.type)!=="Theory") return false;
+  if(u._elig==="restricted") return false;
+  return true;
+}
+function suggestCores(){                          // distinct candidate codes not already confirmed
+  const seen=new Set(), out=[];
+  for(const u of UNITS) if(isLikelyCore(u) && !cores.has(u.code) && !seen.has(u.code)){seen.add(u.code);out.push(u.code);}
+  return out.sort();
+}
+function saveCores(){save(LS.cores,[...cores]);}
+function firstUnitOf(code){return sortForView(UNITS.filter(u=>u.code===code))[0];}   // division to pin
+function isCorePinned(u){return cores.has(u.code) && inPlan(u);}   // a planned unit of a confirmed core
+function coreBadge(u){return isCorePinned(u)?`<span class="core-badge" title="Confirmed core (pinned in plan)">core</span>`:"";}
+function pinCore(code){                           // confirm a core -> record + pin its 1st division
+  cores.add(code); const u=firstUnitOf(code); if(u) plan[u.key]=true;
+  saveCores(); save(LS.plan,plan); refresh();
+}
+function unpinCore(code){                          // remove a core -> drop from cores + unplan its unit
+  cores.delete(code); const u=firstUnitOf(code); if(u) delete plan[u.key];
+  saveCores(); save(LS.plan,plan); refresh();
+}
+function applyCoreText(){                          // paste exact codes -> merge into confirmed cores (override the heuristic)
+  const box=document.getElementById("coreInput"), idx={};
+  for(const u of UNITS) idx[u.code.replace(/\s+/g,"").toUpperCase()]=u.code;   // normalize -> canonical
+  const codes=[...new Set((box.value||"").split(/[,;\n]+/).map(t=>t.trim()).filter(Boolean)
+    .map(t=>idx[t.replace(/\s+/g,"").toUpperCase()]||t.replace(/\s+/g," ").toUpperCase()))];
+  for(const c of codes){cores.add(c); const u=firstUnitOf(c); if(u) plan[u.key]=true;}
+  box.value=""; saveCores(); save(LS.plan,plan); refresh();
+}
+function toggleCoreSuggest(){coreSuggestOpen=!coreSuggestOpen; refresh();}
+function renderCores(){
+  const list=document.getElementById("coreList"), sug=document.getElementById("coreSuggest");
+  if(!list||!sug) return;
+  const confirmed=[...cores].sort();
+  list.innerHTML = confirmed.length
+    ? `<span class="hint">Confirmed core (pinned):</span> `+confirmed.map(c=>{
+        const u=firstUnitOf(c), miss=u?"":' <span class="muted">(not loaded)</span>';
+        return `<span class="chip core-chip" title="Remove core">${esc(c)}${miss}
+          <span class="rm" onclick="unpinCore('${esc(c)}')">\u00d7</span></span>`;}).join("")
+    : `<span class="hint">No core courses confirmed yet. Suggest or paste your program's core codes \u2014 they get pinned in the plan.</span>`;
+  if(coreSuggestOpen){
+    const cand=suggestCores();
+    sug.innerHTML=`<span class="hint">Suggested for ${esc(profileStr())} (confirm to pin):</span> `+(cand.length
+      ? cand.map(c=>`<span class="chip sug-chip" title="Confirm + pin as core" onclick="pinCore('${esc(c)}')">\uFF0B ${esc(c)}</span>`).join("")
+      : `<span class="muted">no core suggestions (set your dept/year, or paste codes below)</span>`);
+  }else sug.innerHTML="";
+}
+
+/* ---------- chips ---------- */
+function toggleChips(el,items,shownSet,counts){
+  el.innerHTML="";
+  items.forEach(it=>{
+    const b=document.createElement("span");
+    b.className="chip tgl"+(shownSet.has(it)?"":" off");
+    b.innerHTML=`${it} <span class="n">${counts?counts[it]||0:""}</span>`;
+    b.onclick=()=>{shownSet.has(it)?shownSet.delete(it):shownSet.add(it);refresh();};
+    el.appendChild(b);
+  });
+}
+function slotChips(el){
+  el.innerHTML="";
+  SLOT_ORDER.forEach(s=>{
+    const b=document.createElement("span");
+    b.className="chip slot"+(state.busy.has(s)?" on":"");
+    b.textContent=s;
+    b.onclick=()=>{state.busy.has(s)?state.busy.delete(s):state.busy.add(s);saveBusy();refresh();};
+    el.appendChild(b);
+  });
+}
+function countBy(fn){const m={};UNITS.forEach(u=>{const k=fn(u);m[k]=(m[k]||0)+1});return m;}
+
+/* ---------- profile selects ---------- */
+function opt(v,label,sel){return `<option value="${esc(v)}" ${v===sel?"selected":""}>${esc(label||v||"— any —")}</option>`;}
+function initProfile(){
+  const progs=[...new Set(COURSES.flatMap(c=>(c.restrictions||[]).map(r=>r.program)))]
+    .filter(p=>p&&p!=="ALL").sort();
+  const years=["1st","2nd","3rd","4th","5th"]; // year of study (index+1)
+  document.getElementById("p-dept").innerHTML=opt("","",profile.dept)+DEPTS.map(d=>opt(d,d+" ("+(DEPT_FULL[d]||d)+")",profile.dept)).join("");
+  document.getElementById("p-prog").innerHTML=opt("","",profile.prog)+progs.map(p=>opt(p,p,profile.prog)).join("");
+  document.getElementById("p-year").innerHTML=years.map((n,i)=>opt(String(i+1),n+" year",profile.year)).join("");
+  document.getElementById("p-hint").textContent = profile.batch
+    ? `\u2248 ${profile.batch} entry \u00b7 AY ${BASE_YEAR}\u2013${String((BASE_YEAR+1)%100).padStart(2,"0")}`
+    : "";
+  const upd=()=>{
+    const year=document.getElementById("p-year").value;
+    profile={
+      dept:document.getElementById("p-dept").value,
+      prog:document.getElementById("p-prog").value,
+      year, batch:batchFromYear(+year)};        // map year of study -> batch year
+    save(LS.profile,profile);initProfile();refresh();};
+  document.getElementById("p-dept").onchange=upd;
+  document.getElementById("p-prog").onchange=upd;
+  document.getElementById("p-year").onchange=upd;
+}
+
+/* ---------- refresh ---------- */
+function refresh(){
+  computeClashes();
+  const us=filtered();
+  document.getElementById("s-shown").textContent=us.length;
+  document.getElementById("s-elig").textContent=
+    (profile.batch&&profile.dept)? us.filter(u=>u._elig==="eligible"||u._elig==="open").length : "\u2013";
+  document.getElementById("view-grid").innerHTML=state.view==="grid"?renderGrid(us):"";
+  document.getElementById("view-slot").innerHTML=state.view==="slot"?renderSlot(us):"";
+  document.getElementById("view-list").innerHTML=state.view==="list"?renderList(us):"";
+  for(const v of ["grid","slot","list"])
+    document.getElementById("view-"+v).classList.toggle("hidden",state.view!==v);
+  // extras + unscheduled: same reactive path as grid/plan, same filtered `us`,
+  // so plan highlighting + filters + file visibility always stay in sync
+  document.getElementById("view-extras").innerHTML=renderExtras(us);
+  toggleChips(document.getElementById("depts"),DEPTS,state.depts,countBy(u=>u.dept));
+  toggleChips(document.getElementById("levels"),LEVELS,state.levels,countBy(u=>u._lvl));
+  toggleChips(document.getElementById("types"),TYPES,state.types,countBy(u=>u._bucket));
+  slotChips(document.getElementById("slots"));
+  renderHidden(); renderPlan(); renderCores();
+  document.getElementById("emptyState").classList.toggle("hidden",UNITS.length>0);
+}
+
+/* ---------- dataset assembly + persistence ---------- */
+function filesFromPayload(payload){ // group a merged payload back into per-source file entries
+  const groups={}, uBySrc={};
+  (payload.courses||[]).forEach(c=>{const k=c.source||"data";(groups[k]=groups[k]||[]).push(c);});
+  for(const k in (payload.units||{})){const u=payload.units[k]; const s=u.source||"data";
+    (uBySrc[s]=uBySrc[s]||{})[k]=u;}                        // split the units map by source too
+  const ay=(payload.meta&&payload.meta.academic_year!=null)?payload.meta.academic_year:null;
+  return Object.entries(groups).map(([src,courses])=>(
+    {name:src, dept:src, count:courses.length, courses, units:(uBySrc[src]||{}), academic_year:ay, show:true}));
+}
+function initFiles(){
+  const cached=load(LS.dataset,null);
+  if(cached && cached.files){                              // cache present (may be empty if cleared)
+    SLOT_INFO=cached.slot_info||(DATA&&DATA.slot_info)||{};
+    DAY_GRID =cached.day_grid ||(DATA&&DATA.day_grid) ||{};
+    return cached.files.map(f=>({...f, id:++fileSeq, show:f.show!==false}));
+  }
+  SLOT_INFO=(DATA&&DATA.slot_info)||{}; DAY_GRID=(DATA&&DATA.day_grid)||{};
+  if(DATA && DATA.courses && DATA.courses.length)          // first load: seed build-time preload
+    return filesFromPayload(DATA).map(f=>({id:++fileSeq, ...f}));
+  return [];
+}
+function saveDataset(){
+  save(LS.dataset,{
+    files:files.map(f=>({name:f.name,dept:f.dept,count:f.count,courses:f.courses,units:f.units,
+      academic_year:f.academic_year,show:f.show})),
+    slot_info:SLOT_INFO, day_grid:DAY_GRID});
+}
+/* Fallback: rebuild units from flat rows if a cached file predates unit payloads.
+   Heuristics still come from Python (each row carries parsed `meetings` + the
+   unit's `est_credits`/`contact_hours`); this only regroups + dedupes for display. */
+function unitsFromCourses(courses){
+  const g={};
+  for(const c of courses){(g[c.unit_key]=g[c.unit_key]||[]).push(c);}
+  const out={};
+  for(const key in g){
+    const rows=g[key], rep=rows[0], bm={};
+    for(const c of rows) for(const m of (c.meetings||[])){
+      const sl=(m.slot!=null&&m.slot!=="")?m.slot:(c.slot||"");
+      const k=m.day+"|"+sl+"|"+m.code+"|"+m.start+"|"+m.end;
+      const d=bm[k]||(bm[k]={day:m.day,code:m.code,start:m.start,end:m.end,slot:sl,kind:m.kind,rooms:[]});
+      if(m.room && !d.rooms.includes(m.room)) d.rooms.push(m.room);
+    }
+    const meetings=Object.values(bm).sort((a,b)=>(WEEKN[a.day]??9)-(WEEKN[b.day]??9)||toMin(a.start)-toMin(b.start));
+    out[key]={key, code:rep.code, name:rep.name, dept:rep.dept, number:rep.number, level:rep.level,
+      type:rep.type, category:rep.category, advanced:rep.advanced, instructor:rep.instructor,
+      source:rep.source, division:rep.division, restrictions:rep.restrictions,
+      slots:[...new Set(rows.map(c=>c.slot).filter(Boolean))].sort(), meetings,
+      est_credits:rep.est_credits||0, ltp:rep.ltp||"", credit_src:rep.credit_src||"formula",
+      contact_hours:rep.contact_hours||0, sections:rows.length};
+  }
+  return out;
+}
+function applyDataset(){
+  recomputeBaseYear();   // derive BASE_YEAR from the loaded page(s) before profiling
+  const shown=files.filter(f=>f.show);
+  COURSES = shown.flatMap(f=>f.courses||[]);               // flat rows (eligibility, dept-full, raw list)
+  const umap={};                                           // merge per-file unit maps (keys disjoint by dept)
+  for(const f of shown){
+    const u=(f.units && Object.keys(f.units).length) ? f.units : unitsFromCourses(f.courses||[]);
+    for(const k in u) umap[k]=u[k];
+  }
+  UNITS = Object.values(umap);
+  UNITS.forEach(u=>{u._bucket=typeBucket(u.type); u._lvl=u.level||"?";});
+  DEPT_FULL=computeDeptFull();
+  DEPTS =[...new Set(UNITS.map(u=>u.dept))].filter(Boolean).sort();
+  LEVELS=[...new Set(UNITS.map(u=>u._lvl))].sort();
+  TYPES =[...new Set(UNITS.map(u=>u._bucket))].sort();
+  SLOT_ORDER=Object.keys(SLOT_INFO);
+  state.depts=new Set(DEPTS); state.levels=new Set(LEVELS); state.types=new Set(TYPES);
+  state.busy=new Set([...state.busy].filter(s=>SLOT_ORDER.includes(s)));
+  document.getElementById("s-total").textContent=new Set(UNITS.map(u=>u.code)).size;
+  document.getElementById("sub").textContent = UNITS.length
+    ? `${UNITS.length} units \u00b7 ${new Set(UNITS.map(u=>u.code)).size} courses \u00b7 ${DEPTS.length} dept(s) \u00b7 credits est. from ASC slots`
+    : "Drop ASC .html pages below to load courses.";
+  renderFiles(); initProfile(); refresh();
+}
+function renderFiles(){
+  const box=document.getElementById("fileList");
+  if(!files.length){box.innerHTML=`<p class="muted">No files loaded yet.</p>`;return;}
+  box.innerHTML=files.map(f=>`<div class="fitem ${f.show?"":"hiddenf"}">
+    <label class="toggle"><input type="checkbox" ${f.show?"checked":""} onchange="toggleFileShow(${f.id})"></label>
+    <b>${esc(f.name)}</b>
+    <span class="pill">${esc(f.dept||"?")}</span>
+    <span class="muted">${f.count} course(s)</span>
+    <span class="spacer"></span>
+    <span class="rowx" title="Remove file" onclick="removeFile(${f.id})">\u00d7</span></div>`).join("");
+}
+function toggleFileShow(id){const f=files.find(x=>x.id===id); if(!f)return; f.show=!f.show; saveDataset(); applyDataset();}
+function removeFile(id){files=files.filter(x=>x.id!==id); saveDataset(); applyDataset();}
+function clearData(){files=[]; saveDataset(); applyDataset();} // persist empty so it stays cleared
+
+/* ---------- Pyodide: run the ONE Python parser in the browser ---------- */
+let pyodide=null, pyParse=null, pyBoot=null;
+function setParserStatus(msg,kind){
+  const el=document.getElementById("parserStatus"); if(!el)return;
+  el.textContent=msg; el.className="dz-sub"+(kind?(" "+kind):"");
+}
+function loadScript(src){
+  return new Promise((res,rej)=>{const s=document.createElement("script");
+    s.src=src; s.onload=()=>res(); s.onerror=()=>rej(new Error("Failed to load "+src));
+    document.head.appendChild(s);});
+}
+/* Boot Pyodide from one indexURL and get BeautifulSoup ready.
+   local=true  -> vendored copy; install bs4 from the local wheels (deps=false → no net)
+   local=false -> CDN; install bs4/soupsieve from PyPI (needs internet, first load only) */
+async function bootFrom(indexURL, local){
+  if(typeof loadPyodide==="undefined") await loadScript(indexURL+"pyodide.js");
+  pyodide=await loadPyodide({indexURL});
+  await pyodide.loadPackage("micropip");
+  if(local){
+    pyodide.globals.set("_wheels", pyodide.toPy(BS4_WHEELS.map(w=>indexURL+w)));
+    await pyodide.runPythonAsync(`import micropip\nawait micropip.install(list(_wheels), deps=False)`);
+  }else{
+    await pyodide.runPythonAsync(`import micropip\nawait micropip.install(["beautifulsoup4","soupsieve"])`);
+  }
+}
+function bootPyodide(){
+  if(pyBoot) return pyBoot;
+  pyBoot=(async()=>{
+    if(FORCE_CDN){                                    // share build: CDN only, no local files
+      setParserStatus("Loading Python parser\u2026 (online build \u2014 fetching from CDN)","loading");
+      await bootFrom(PYODIDE_CDN, false);
+    }else{
+      setParserStatus("Loading Python parser\u2026 (offline: bundled with this page)","loading");
+      try{
+        await bootFrom(PYODIDE_LOCAL, true);          // vendored → fully offline
+      }catch(localErr){
+        console.warn("Local Pyodide unavailable, falling back to CDN:", localErr);
+        setParserStatus("Local runtime unavailable \u2014 trying the online CDN\u2026","loading");
+        pyodide=null;
+        await bootFrom(PYODIDE_CDN, false);           // needs internet (first load)
+      }
+    }
+    pyodide.FS.writeFile("/home/pyodide/asc_parser.py", ASC_PARSER_SOURCE);
+    await pyodide.runPythonAsync(`import sys\nif "/home/pyodide" not in sys.path: sys.path.insert(0,"/home/pyodide")\nimport asc_parser`);
+    pyParse=pyodide.runPython(
+`import json, asc_parser
+def _parse_files(pairs):
+    return json.dumps(asc_parser.parse_payload(pairs.to_py()))
+_parse_files`);
+    setParserStatus("Parser ready \u2014 drop ASC .html pages to add courses.","ready");
+  })();
+  pyBoot.catch(()=>setParserStatus(
+    "Couldn't load the Python parser. The bundled runtime failed and the online "+
+    "fallback needs internet. Your saved courses still work \u2014 reload to retry.","error"));
+  return pyBoot;
+}
+
+/* ---------- upload ---------- */
+function stem(name){return (name||"").replace(/\.[^.]*$/,"");}
+async function addFiles(fileArr){
+  await bootPyodide();
+  if(!pyParse) throw new Error("parser unavailable");
+  for(const file of fileArr){
+    const text=await file.text();
+    const payload=JSON.parse(pyParse([[file.name,text]]));  // parse one file, keep it groupable
+    SLOT_INFO=payload.slot_info||SLOT_INFO; DAY_GRID=payload.day_grid||DAY_GRID;
+    const courses=payload.courses||[];
+    const units=payload.units||{};                          // plannable (course+division) units
+    const ay=(payload.meta&&payload.meta.academic_year!=null)?payload.meta.academic_year:null;
+    const dept=courses.length ? (courses[0].source||stem(file.name)) : stem(file.name);
+    files=files.filter(f=>f.name!==file.name);              // replace a same-named file
+    files.push({id:++fileSeq, name:file.name, dept, count:courses.length, courses, units, academic_year:ay, show:true});
+  }
+  saveDataset(); applyDataset();
+}
+async function handleAdd(fileArr){
+  if(!fileArr.length) return;
+  try{
+    setParserStatus("Parsing "+fileArr.length+" file(s)\u2026","loading");
+    await addFiles(fileArr);
+    setParserStatus("Parser ready \u2014 drop more ASC .html pages to add courses.","ready");
+  }catch(err){
+    if(pyParse) setParserStatus("Parse failed: "+((err&&err.message)||err),"error");
+    // else: bootPyodide() already showed the offline/CDN message
+  }
+}
+
+/* ---------- wire controls (once) ---------- */
+document.getElementById("q").oninput=e=>{state.q=e.target.value.trim();refresh();};
+document.getElementById("hideBusy").onchange=e=>{state.hideBusy=e.target.checked;refresh();};
+document.getElementById("hideInelig").onchange=e=>{state.hideInelig=e.target.checked;refresh();};
+document.getElementById("hideOtherAdv").onchange=e=>{state.hideOtherAdv=e.target.checked;refresh();};
+document.getElementById("hideCore").onchange=e=>{state.hideCore=e.target.checked;refresh();};
+document.getElementById("distinct").onchange=e=>{state.distinct=e.target.checked;refresh();};
+document.getElementById("clearPlan").onclick=clearPlan;
+document.getElementById("suggestCore").onclick=toggleCoreSuggest;
+document.getElementById("applyCore").onclick=applyCoreText;
+document.getElementById("coreInput").onkeydown=e=>{if(e.key==="Enter")applyCoreText();};
+document.getElementById("tabs").onclick=e=>{
+  const b=e.target.closest("button"); if(!b)return;
+  state.view=b.dataset.v;
+  [...e.currentTarget.children].forEach(x=>x.classList.toggle("on",x===b));
+  refresh();
+};
+document.getElementById("reset").onclick=()=>{
+  state.q="";document.getElementById("q").value="";
+  state.depts=new Set(DEPTS);state.levels=new Set(LEVELS);state.types=new Set(TYPES);
+  state.busy.clear();saveBusy();state.hideBusy=state.hideInelig=state.hideOtherAdv=state.hideCore=false;
+  document.getElementById("hideBusy").checked=false;
+  document.getElementById("hideInelig").checked=false;
+  document.getElementById("hideOtherAdv").checked=false;
+  document.getElementById("hideCore").checked=false;
+  refresh();
+};
+const dz=document.getElementById("dropzone"), fp=document.getElementById("filepick");
+dz.onclick=()=>fp.click();
+dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("drag");});
+dz.addEventListener("dragleave",()=>dz.classList.remove("drag"));
+dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("drag");
+  handleAdd([...e.dataTransfer.files].filter(f=>/\.html?$/i.test(f.name)));});
+fp.onchange=e=>{handleAdd([...e.target.files]); e.target.value="";};
+document.getElementById("clearData").onclick=()=>{
+  if(files.length && !confirm("Remove all loaded courses from this browser?")) return;
+  clearData();
+};
+document.getElementById("foot").textContent=
+  "Parsed in-browser by asc_parser.py (Pyodide). Slot timings: official IIT-B New General Slot Pattern (Autumn 2026-27). "+
+  "Credits are estimated (C=2L+2T+P, L/P = rounded weekly lecture/lab hours, T=1 if a tutorial exists) "+
+  "per course \u2014 seminars/R&D use a fixed course-type table; override any course in My Plan. "+
+  "Eligibility inferred from ASC restriction rules \u2014 always confirm on ASC.";
+
+/* ---------- init ---------- */
+files=initFiles();   // restore cached dataset or build-time preload (instant, no Pyodide)
+applyDataset();
+bootPyodide();       // warm up the parser in the background so uploads are ready
+</script>
+</body>
+</html>
