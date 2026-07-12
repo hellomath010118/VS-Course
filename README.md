@@ -100,33 +100,26 @@ parser) did not enjoy the experience. Two moments from its notes, mid-parse:
 
 ![Claude Opus weighing parser options against ASC's malformed markup](screenshots/opus-roast-2.jpg)
 
-*Roasts courtesy of Claude Opus, mid-parse. It is not wrong.*
+*Roasts courtesy of Claude Opus.*
 
 ## A roast of every file
 
 Because a repo you cannot laugh at is a repo you will never open again:
 
-- `asc_parser.py`: the overachiever. Fluent in BeautifulSoup and the lost dialect of
+- `asc_parser.py`: the overachiever. Fluent in the lost dialect of
   ASC's frameset-era HTML, it parses your courses, estimates your credits, builds the
   website, and smuggles a copy of itself into every page it generates. Single source of
   truth, zero chill.
-- `template.html`: 1,400 lines of HTML doing its best impression of a real web app. It
-  is the skeleton, the styling, and the JavaScript glue, frozen in the split second
-  before `asc_parser.py` pours an entire Python interpreter into it.
 - `timetable.html`: the offline build. A 120 KB page that quietly boots a 14 MB Python
   runtime the instant you open it, then runs with your Wi-Fi switched off out of sheer
   principle.
 - `timetable-share.html`: its extrovert twin. One file, no folder, borrows Python from
-  a CDN. Perfect for emailing to a friend who will open it on campus Wi-Fi and then
-  blame you when it takes a moment to wake up.
+  a CDN.
 - `serve.py`: exists purely because your browser refuses to trust files living on your
   own hard drive. A tiny localhost server whose entire life's work is opening one
   browser tab. It has made peace with this.
-- `pyodide/`: 14 MB of "it was genuinely easier to ship an entire Python interpreter to
-  the browser than to trust JavaScript with dates and time-slots." Do not open it. Do
-  not question it.
+- `pyodide/`: 14 MB of Do not open it. Do not question it.
 - `README.md`: you are reading it. It roasts every other file in the repo and then
   roasts itself. Roughly 40% instructions, 60% coping mechanism.
 
-Made for surviving ASC registration. Your data stays on your machine. Course clashes
-are your responsibility; blaming the portal is your right.
+Made for surviving ASC registration.
