@@ -313,6 +313,24 @@ def run():
             })()""")
             print(f"== hide-unplanned filter: {only}")
 
+            # --- "Mark plan-clashing": non-planned sections that overlap a planned
+            #     meeting wear .pclash (brown); planned ones never do; off = none ---
+            mark = page.evaluate("""(()=>{
+              state.view='grid'; refresh();
+              if(!plan['CS 213']) togglePlan('CS 213');
+              const marked=[...document.querySelectorAll('.pclash')].map(e=>e.getAttribute('data-key'));
+              const ps=UNITS.filter(inPlan);
+              const genuine=marked.every(k=>ps.some(p=>unitsClash(UNIT_BY_KEY[k],p)));
+              const plannedMarked=marked.some(k=>plan[k]);
+              document.getElementById('markClash').checked=false; state.markClash=false; refresh();
+              const off=document.querySelectorAll('.pclash').length;
+              document.getElementById('markClash').checked=true; state.markClash=true;
+              togglePlan('CS 213'); refresh();          // empty plan -> nothing marked
+              const cleared=document.querySelectorAll('.pclash').length;
+              return {n:marked.length, genuine, plannedMarked, off, cleared};
+            })()""")
+            print(f"== mark plan-clashing: {mark}")
+
             # --- Feature 3: suggest -> confirm core -> pinned, counts, persists ---
             page.evaluate("profile.dept='CS'; profile.prog=''; profile.year='3';"
                           "profile.batch=batchFromYear(3); coreSuggestOpen=true; refresh();")
@@ -331,7 +349,7 @@ def run():
             info = {"ma105_rows": ma105_rows, "unsched": unsched, "plan1": plan1,
                     "cred_after": cred_after, "plan2": plan2, "creds": creds, "react": react,
                     "chips": chips, "restrict": restrict, "busy": busy, "lab": lab,
-                    "only": only, "core": core}
+                    "only": only, "mark": mark, "core": core}
 
         # rich state for the screenshot: a clashing plan (MA 105 D1 vs MA 419) +
         # a couple of external commitments, so the busy TABLE shows red + clash cells
@@ -466,6 +484,11 @@ def run():
         o = info.get("only", {})
         only_ok = (o.get("on") == 2 and o.get("afterRemove") == 1
                    and o.get("after") == o.get("before") and o.get("before", 0) > 2)
+        # "Mark plan-clashing": some sections marked, all genuinely overlapping,
+        # never a planned one; toggle off and an empty plan both clear the paint
+        mk = info.get("mark", {})
+        mark_ok = (mk.get("n", 0) > 0 and mk.get("genuine") and not mk.get("plannedMarked")
+                   and mk.get("off") == 0 and mk.get("cleared") == 0)
         lazy_ok = (lazy.get("noBoot") is True and lazy.get("cachedMsg") is True
                    and lazy.get("descKept") is True
                    # a shared asc-plan .json applies WITHOUT booting Pyodide
@@ -512,11 +535,12 @@ def run():
                 and info.get("plan1", {}).get("hours", 0) > 0
                 and info.get("cred_after", 0) >= 99
                 and info.get("plan2", {}).get("clash") == 0
-                and credits_ok and react_ok and chips_ok and lab_ok and only_ok and lazy_ok
-                and restrict_ok and busy_ok and core_ok and share_ok and bundle_ok)
+                and credits_ok and react_ok and chips_ok and lab_ok and only_ok and mark_ok
+                and lazy_ok and restrict_ok and busy_ok and core_ok and share_ok and bundle_ok)
         print(f"\n   credits_ok={credits_ok}  react_ok={react_ok}  chips_ok={chips_ok}"
-              f"  lab_ok={lab_ok}  only_ok={only_ok}  lazy_ok={lazy_ok}  restrict_ok={restrict_ok}"
-              f"  busy_ok={busy_ok}  core_ok={core_ok}  share_ok={share_ok}  bundle_ok={bundle_ok}")
+              f"  lab_ok={lab_ok}  only_ok={only_ok}  mark_ok={mark_ok}  lazy_ok={lazy_ok}"
+              f"  restrict_ok={restrict_ok}  busy_ok={busy_ok}  core_ok={core_ok}"
+              f"  share_ok={share_ok}  bundle_ok={bundle_ok}")
         print("==== RESULT:", "PASS" if good else "FAIL", "====")
         return 0 if good else 1
 

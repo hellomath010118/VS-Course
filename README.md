@@ -15,7 +15,9 @@ into something you can actually plan with:
   estimation from each course's L-T-P (lecture / tutorial / practical) hours —
   estimates are marked with a `~` so you know which is which.
 - Clash detection, so you stop accidentally enrolling in two courses that meet at the
-  same time.
+  same time. Everything that overlaps your current plan is painted busy-brown
+  (**Mark plan-clashing**, on by default) — no need to fake "busy" marks over your
+  own lectures to see what still fits.
 - A weekly "When I'm busy" table, so your timetable is a grid instead of a guess.
   Print it (or save as PDF) with one button when you're done.
 - Click any course **name** — the grey text under the course code, in any view — for a
