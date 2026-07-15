@@ -48,6 +48,11 @@
   .dz-sub{font-size:12px;color:var(--muted);margin-top:3px}
   .dz-sub.loading{color:var(--warn)} .dz-sub.ready{color:var(--ok)} .dz-sub.error{color:var(--busy)}
   .linklike{color:var(--accent);cursor:pointer;text-decoration:underline}
+  .grab-help{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
+  .grab-help summary{cursor:pointer;font-size:12.5px;color:var(--muted)}
+  .grab-help ol{margin:8px 0 2px 18px;padding:0;font-size:12.5px}
+  .grab-help li{margin:3px 0}
+  .grab-help code{background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:0 4px;font-size:11.5px}
   .filelist{margin-top:10px;display:flex;flex-direction:column}
   .fitem{display:flex;gap:8px;align-items:center;padding:6px 2px;border-bottom:1px solid var(--line)}
   .fitem:last-child{border-bottom:0}
@@ -87,6 +92,7 @@
   .tag.restricted{background:var(--busy-soft);color:var(--busy)}
   .tag.restrictedov{background:var(--warn-soft);color:var(--warn)}
   .tag.other{background:#eef2ff;color:#4338ca}
+  .tag.hs{background:#e0f2fe;color:#0369a1}
 
   /* weekly grid */
   .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;align-items:start}
@@ -234,14 +240,25 @@
     <div class="row">
       <span class="lbl">Courses</span>
       <div id="dropzone" class="dropzone">
-        <div class="dz-main">Drop ASC <b>.html</b> pages here, or <span class="linklike">browse</span></div>
+        <div class="dz-main">Drop ASC <b>.html</b> pages or a grabbed <b>.json</b> here, or <span class="linklike">browse</span></div>
         <div class="dz-sub" id="parserStatus">Loading parser…</div>
       </div>
-      <input type="file" id="filepick" accept=".html,.htm" multiple hidden>
+      <input type="file" id="filepick" accept=".html,.htm,.json" multiple hidden>
       <span class="spacer"></span>
       <button class="btn" id="clearData">Clear data</button>
     </div>
     <div id="fileList" class="filelist"></div>
+    <!-- one-click grabber: fetches ALL departments + official course details
+         over the user's own logged-in ASC session (see grab.js) -->
+    <details class="grab-help">
+      <summary>Get <b>every department + official credits &amp; descriptions</b> in one go (no extension needed)</summary>
+      <ol>
+        <li>Log in to ASC and open <b>Academic → All About Courses → Running Courses</b>; pick the year &amp; semester so the department list shows.</li>
+        <li>Press <b>F12</b> → <b>Console</b> tab. (If pasting is blocked, type <code>allow pasting</code> and press Enter first.)</li>
+        <li><span class="linklike" onclick="copyGrabber()">Copy the grabber script</span> <span class="hint" id="grabCopied"></span>, paste it into the console, press Enter.</li>
+        <li>Wait a minute or two — it downloads <b>asc-courses-….json</b> (runs entirely in your browser, on your own session). Drop that file above.</li>
+      </ol>
+    </details>
   </div>
 
   <!-- profile drives eligibility from the ASC restriction rules -->
@@ -326,9 +343,10 @@
     <div id="hiddenList"></div>
   </details>
 
-  <div id="emptyState" class="card hidden"><b>No courses loaded.</b> Drag &amp; drop one or more ASC
-    <b>.html</b> pages (saved with SingleFile) onto the box above — they're parsed right in your
-    browser (no upload to any server).</div>
+  <div id="emptyState" class="card hidden"><b>No courses loaded.</b> Drag &amp; drop a grabbed
+    <b>.json</b> bundle (see "Get every department…" above) or one or more SingleFile-saved ASC
+    <b>.html</b> pages onto the box above — they're parsed right in your browser (no upload to
+    any server).</div>
 
   <div id="view-grid"></div>
   <div id="view-slot" class="hidden"></div>
@@ -346,12 +364,18 @@
    - ASC_PARSER_SOURCE  : full text of asc_parser.py, imported in-browser via Pyodide */
 const DATA = {"courses": [], "units": {}, "slot_info": {"1": {"days": ["Mon", "Tue", "Thu"], "time": "09:30–10:25"}, "2": {"days": ["Mon", "Tue", "Thu"], "time": "10:35–11:30"}, "3": {"days": ["Mon", "Tue", "Thu"], "time": "11:35–12:30"}, "4": {"days": ["Tue", "Thu"], "time": "08:00–09:25"}, "5": {"days": ["Wed", "Fri"], "time": "08:00–09:25"}, "6": {"days": ["Wed", "Fri"], "time": "09:30–10:55"}, "7": {"days": ["Wed", "Fri"], "time": "11:05–12:30"}, "8": {"days": ["Mon", "Thu"], "time": "14:00–15:25"}, "9": {"days": ["Mon", "Thu"], "time": "15:30–16:55"}, "10": {"days": ["Tue", "Fri"], "time": "14:00–15:25"}, "11": {"days": ["Tue", "Fri"], "time": "15:30–16:55"}, "12": {"days": ["Mon", "Tue", "Thu"], "time": "17:05–18:00"}, "L": {"days": ["Mon", "Tue", "Wed", "Thu", "Fri"], "time": "lab block (see venue)"}}, "day_grid": {"Mon": [["08:00–09:25", "XE"], ["09:30–10:25", "1"], ["10:35–11:30", "2"], ["11:35–12:30", "3"], ["14:00–15:25", "8"], ["15:30–16:55", "9"], ["17:05–18:00", "12"], ["14:00–17:00", "L"]], "Tue": [["08:00–09:25", "4"], ["09:30–10:25", "1"], ["10:35–11:30", "2"], ["11:35–12:30", "3"], ["14:00–15:25", "10"], ["15:30–16:55", "11"], ["17:05–18:00", "12"], ["14:00–17:00", "L"]], "Wed": [["08:00–09:25", "5"], ["09:30–10:55", "6"], ["11:05–12:30", "7"], ["14:00–17:00", "L"]], "Thu": [["08:00–09:25", "4"], ["09:30–10:25", "1"], ["10:35–11:30", "2"], ["11:35–12:30", "3"], ["14:00–15:25", "8"], ["15:30–16:55", "9"], ["17:05–18:00", "12"], ["14:00–17:00", "L"]], "Fri": [["08:00–09:25", "5"], ["09:30–10:55", "6"], ["11:05–12:30", "7"], ["14:00–15:25", "10"], ["15:30–16:55", "11"], ["14:00–17:00", "L"]]}, "meta": {"academic_year": null}};
 const ASC_PARSER_SOURCE = `"""
-Generic parser + query tool for IIT-B ASC course listings saved with SingleFile.
+Generic parser + query tool for IIT-B ASC course listings.
 
-Works on the HTML you get from: ASC -> course list page -> "SingleFile" save.
-That save is a *frameset*, and each frame's real HTML is stuffed into a
-\`src="data:text/html,..."\` URI. This tool digs the course table out of there,
-so you can just re-save the page every semester and re-run this.
+Two input formats, one parser:
+
+* SingleFile saves of an ASC course page. That save is a *frameset*, and each
+  frame's real HTML is stuffed into a \`src="data:text/html,..."\` URI. This tool
+  digs the course table out of there.
+* \`asc-bundle\` JSON produced by grab.js (pasted into the DevTools console of a
+  logged-in ASC tab): every department's running-courses page plus every
+  course's crsedetail.jsp page, fetched over the user's own session and saved
+  as one file. Bundles additionally carry OFFICIAL per-course facts (credits,
+  half-semester flag, description) that the listing table alone doesn't have.
 
 --------------------------------------------------------------------------------
 Design patterns used (asked for on purpose):
@@ -407,6 +431,19 @@ class Restriction:
     program: str      # e.g. "B.Tech.", or "ALL"
     allowed: bool     # True = Allowed, False = Deny
     overridable: bool
+
+
+@dataclass(frozen=True)
+class CourseDetail:
+    """Official per-course facts from ASC's crsedetail.jsp 'COURSE INFO' page."""
+    code: str
+    credits: float | None = None     # "Total Credits" (institute-official)
+    lecture: float | None = None     # weekly hours as listed
+    tutorial: float | None = None
+    practical: float | None = None
+    selfstudy: float | None = None
+    half_sem: bool | None = None     # "Half Semester" Y/N
+    description: str = ""
 
 
 @dataclass(frozen=True)
@@ -801,6 +838,79 @@ class ASCParser:
 
 
 # ----------------------------------------------------------------------------- 
+# Grabber bundles (grab.js) + the official course-detail page
+# -----------------------------------------------------------------------------
+BUNDLE_KIND = "asc-bundle"   # the "kind" marker grab.js writes into its JSON
+
+
+def _flat_code(code: str) -> str:
+    """Course-code join key: 'CS 101' / 'cs101' -> 'CS101'."""
+    return re.sub(r"\\s+", "", code or "").upper()
+
+
+def _maybe_bundle(text: str) -> dict | None:
+    """Parse \`\`text\`\` as a grab.js bundle; \`\`None\`\` when it isn't one."""
+    if not text.lstrip().startswith("{"):
+        return None
+    import json
+    try:
+        obj = json.loads(text)
+    except ValueError:
+        return None
+    return obj if isinstance(obj, dict) and obj.get("kind") == BUNDLE_KIND else None
+
+
+def parse_course_detail(code: str, html_text: str) -> CourseDetail:
+    """Parse one crsedetail.jsp page: a two-column 'Fields | Content' table."""
+    soup = BeautifulSoup(html_text, "html.parser")
+    fields: dict[str, str] = {}
+    for tr in soup.find_all("tr"):
+        cells = tr.find_all(["td", "th"])
+        if len(cells) >= 2:
+            k = ASCParser._text(cells[0]).lower().rstrip(":")
+            if k and k not in fields:
+                fields[k] = ASCParser._text(cells[1])
+
+    def num(key: str) -> float | None:
+        m = re.search(r"\\d+(?:\\.\\d+)?", fields.get(key, ""))
+        return float(m.group()) if m else None
+
+    hs = fields.get("half semester", "").strip().upper()[:1]
+    return CourseDetail(
+        code=code,
+        credits=num("total credits"),
+        lecture=num("lecture"),
+        tutorial=num("tutorial"),
+        practical=num("practical"),
+        selfstudy=num("selfstudy"),
+        half_sem={"Y": True, "N": False}.get(hs),
+        description=fields.get("description", ""),
+    )
+
+
+def _load_bundle(obj: dict) -> tuple[list["Course"], dict[str, CourseDetail], int | None]:
+    """Expand a grab.js bundle into courses + official details + academic year.
+
+    Each captured department page goes through the SAME parser as a SingleFile
+    upload (\`\`load_text\`\` falls back to the raw document when there are no
+    data-URI frames). Details are keyed by flattened course code for joining.
+    """
+    courses: list[Course] = []
+    for page in obj.get("pages", []):
+        src = (page.get("dept") or "").split(",")[0].strip()
+        courses.extend(load_text(page.get("html", ""), source=src))
+    details: dict[str, CourseDetail] = {}
+    for code, entry in (obj.get("details") or {}).items():
+        html_text = (entry or {}).get("html", "")
+        if html_text:
+            details[_flat_code(code)] = parse_course_detail(code, html_text)
+    m = re.match(r"(20\\d{2})", str(obj.get("year", "")))
+    year = int(m.group(1)) if m else _pick_year(
+        _extract_academic_year(p.get("html", "")) for p in obj.get("pages", []))
+    return courses, details, year
+
+
+# ----------------------------------------------------------------------------- 
 # Timetable metadata (IIT-B "New General Slot Pattern", Autumn 2026-27)
 # -----------------------------------------------------------------------------
 # slot -> {days, time}. Used by the front-end to show when each slot meets.
@@ -1139,14 +1249,19 @@ def _pick_year(years: Iterable[int | None]) -> int | None:
 # -----------------------------------------------------------------------------
 # Exporters
 # -----------------------------------------------------------------------------
-def _payload(catalog: CourseCatalog, meta: dict | None = None) -> dict:
+def _payload(catalog: CourseCatalog, meta: dict | None = None,
+             details: dict[str, CourseDetail] | None = None) -> dict:
     """The canonical front-end payload: courses + plannable units + metadata.
 
     \`\`courses\`\` stays a flat per-row list (unchanged shape + new schedule fields)
     for back-compat; \`\`units\`\` groups those rows into plannable (course+division)
     units with aggregated meetings and estimated credits — the UI renders those
     so uncertain heuristics stay in this one file. \`\`meta\`\` carries page-level
-    facts, e.g. \`\`{"academic_year": 2026}\`\` (\`\`None\`\` when unknown).
+    facts, e.g. \`\`{"academic_year": 2026}\`\` (\`\`None\`\` when unknown). \`\`details\`\`
+    (from a grab.js bundle) adds OFFICIAL facts per course: \`\`official_credits\`\`
+    (+ \`\`credit_src="official"\`\`), an official L-T-P, \`\`half_sem\`\` and
+    \`\`description\`\`. Estimates stay in \`\`est_credits\`\` untouched; the UI prefers
+    official when present.
     """
     courses = list(catalog)
     units = build_units(courses)
@@ -1160,6 +1275,27 @@ def _payload(catalog: CourseCatalog, meta: dict | None = None) -> dict:
             d["ltp"] = u["ltp"]
             d["credit_src"] = u["credit_src"]
         course_dicts.append(d)
+    if details:
+        def _fmt(x: float | None) -> str:
+            return str(int(x)) if x and float(x).is_integer() else str(x or 0)
+
+        def _apply(d: dict) -> None:
+            cd = details.get(_flat_code(d["code"]))
+            if not cd:
+                return
+            if cd.credits is not None:
+                d["official_credits"] = int(cd.credits) if cd.credits.is_integer() else cd.credits
+                d["credit_src"] = "official"
+            if any(x is not None for x in (cd.lecture, cd.tutorial, cd.practical)):
+                d["ltp"] = f"{_fmt(cd.lecture)}-{_fmt(cd.tutorial)}-{_fmt(cd.practical)}"
+            if cd.half_sem is not None:
+                d["half_sem"] = cd.half_sem
+            if cd.description:
+                d["description"] = cd.description
+        for u in units.values():
+            _apply(u)
+        for d in course_dicts:
+            _apply(d)
     return {
         "courses": course_dicts,
         "units": units,
@@ -1169,10 +1305,11 @@ def _payload(catalog: CourseCatalog, meta: dict | None = None) -> dict:
     }
 
 
-def export_json(catalog: CourseCatalog, meta: dict | None = None) -> str:
+def export_json(catalog: CourseCatalog, meta: dict | None = None,
+                details: dict[str, CourseDetail] | None = None) -> str:
     """Serialize a catalog to JSON (courses + slot/grid + page metadata)."""
     import json
-    return json.dumps(_payload(catalog, meta), ensure_ascii=False, indent=1)
+    return json.dumps(_payload(catalog, meta, details), ensure_ascii=False, indent=1)
 
 
 def _js_backtick(src: str) -> str:
@@ -1190,7 +1327,8 @@ def _js_backtick(src: str) -> str:
 
 def build_site(catalog: CourseCatalog, out_html: str | Path,
                template: str | Path | None = None,
-               meta: dict | None = None, cdn: bool = False) -> Path:
+               meta: dict | None = None, cdn: bool = False,
+               details: dict[str, CourseDetail] | None = None) -> Path:
     """Render the self-contained front-end HTML.
 
     The page runs THIS parser in the browser via Pyodide, so we embed the full
@@ -1211,14 +1349,22 @@ def build_site(catalog: CourseCatalog, out_html: str | Path,
     tpl_path = Path(template) if template else _SCRIPT_DIR / "template.html"
     html_tpl = Path(tpl_path).read_text(encoding="utf-8")
     # initial dataset as JSON; guard against premature <\/script>
-    blob = json.dumps(_payload(catalog, meta), ensure_ascii=False).replace("<\/", "<\\\\/")
+    blob = json.dumps(_payload(catalog, meta, details), ensure_ascii=False).replace("<\/", "<\\\\/")
     # embed this exact module (via __file__) so Pyodide is the one-and-only parser
     parser_lit = "\`" + _js_backtick(_HERE.read_text(encoding="utf-8")) + "\`"
+    # embed grab.js so the page can offer a copy-to-clipboard grabber
+    grab_path = _SCRIPT_DIR / "grab.js"
+    grab_lit = ("\`" + _js_backtick(grab_path.read_text(encoding="utf-8")) + "\`"
+                if grab_path.exists() else '""')
+    if cdn:  # hard-select the template's existing CDN code path (skip local files)
+        html_tpl = html_tpl.replace("/*__FORCE_CDN__*/false", "/*__FORCE_CDN__*/true")
+    # ORDER MATTERS: this module's source contains every marker string above
+    # (right here, in this function), so embedding it must come LAST — a global
+    # replace done after it would also rewrite the embedded copy of the parser.
     out = (html_tpl
            .replace("/*__DATA__*/null", blob)
+           .replace('/*__GRABJS__*/""', grab_lit)
            .replace('/*__ASCPY__*/""', parser_lit))
-    if cdn:  # hard-select the template's existing CDN code path (skip local files)
-        out = out.replace("/*__FORCE_CDN__*/true", "/*__FORCE_CDN__*/true")
     out_path = Path(out_html)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(out, encoding="utf-8")
@@ -1255,23 +1401,49 @@ def load_many(paths: Iterable[str | Path]) -> CourseCatalog:
     return CourseCatalog(merged)
 
 
+def _load_pairs(pairs: Iterable[tuple[str, str]],
+                ) -> tuple[CourseCatalog, dict[str, CourseDetail], dict]:
+    """Load \`\`(filename, text)\`\` pairs — SingleFile pages and/or grab.js bundles.
+
+    THE shared input path for the browser (\`\`parse_payload\`\`) and the CLI: each
+    text is sniffed (\`\`_maybe_bundle\`\`); bundles expand into their captured
+    department pages + official course details, everything else parses as an
+    ASC page. Returns (merged catalog, details-by-code, meta).
+    """
+    merged: list[Course] = []
+    details: dict[str, CourseDetail] = {}
+    years: list[int | None] = []
+    meta: dict = {}
+    for name, text in pairs:
+        bundle = _maybe_bundle(text)
+        if bundle is not None:
+            b_courses, b_details, b_year = _load_bundle(bundle)
+            merged.extend(b_courses)
+            details.update(b_details)
+            years.append(b_year)
+            meta["kind"] = "bundle"
+            if bundle.get("semester"):
+                meta["semester"] = str(bundle["semester"])
+        else:
+            merged.extend(load_text(text, source=Path(name).stem if name else ""))
+            years.append(_extract_academic_year(text))
+    meta["academic_year"] = _pick_year(years)
+    return CourseCatalog(merged), details, meta
+
+
 def parse_payload(pairs: Iterable[tuple[str, str]]) -> dict:
-    """Parse \`\`(filename, html_text)\`\` pairs into the front-end payload dict.
+    """Parse \`\`(filename, text)\`\` pairs into the front-end payload dict.
 
     Single browser-facing entry point: it runs the exact same parser as the CLI
     and returns the same shape \`\`build_site\`\` inlines
     (\`\`{"courses": [...], "slot_info": ..., "day_grid": ..., "meta": ...}\`\`),
     each course tagged by its file's dominant dept (fallback: the file-name
-    stem). \`\`meta.academic_year\`\` is derived from the page(s) (see
-    :func:\`_extract_academic_year\`), reconciled across files.
+    stem). Accepts SingleFile .html saves and grab.js .json bundles alike.
+    \`\`meta.academic_year\`\` is derived from the page(s)/bundle, reconciled
+    across files.
     """
-    merged: list[Course] = []
-    years: list[int | None] = []
-    for name, text in pairs:
-        stem = Path(name).stem if name else ""
-        merged.extend(load_text(text, source=stem))
-        years.append(_extract_academic_year(text))
-    return _payload(CourseCatalog(merged), {"academic_year": _pick_year(years)})
+    catalog, details, meta = _load_pairs(pairs)
+    return _payload(catalog, meta, details)
 
 
 def _dominant_dept(courses: Sequence[Course], fallback: str = "") -> str:
@@ -1297,8 +1469,9 @@ def _print_table(catalog: CourseCatalog) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Query ASC SingleFile course dumps.")
-    ap.add_argument("files", nargs="*", help="Zero or more SingleFile-saved ASC .html pages")
+    ap = argparse.ArgumentParser(description="Query ASC course dumps (SingleFile .html or grab.js .json).")
+    ap.add_argument("files", nargs="*",
+                    help="Zero or more SingleFile-saved ASC .html pages and/or grab.js .json bundles")
     ap.add_argument("--in-slot", nargs="+", metavar="S", help="keep courses running in these slots")
     ap.add_argument("--not-in-slot", nargs="+", metavar="S", help="drop courses running in these slots")
     ap.add_argument("--dept", nargs="+", metavar="D", help="keep only these departments, e.g. CS ME")
@@ -1316,13 +1489,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                          "with no explicit --build OUT, writes <script_dir>/timetable-share.html")
     args = ap.parse_args(argv)
 
-    cat = load_many(args.files)
-
-    def _meta_for_files() -> dict:
-        """Page-level academic year across the input files (independent of filters)."""
-        years = (_extract_academic_year(Path(f).read_text(encoding="utf-8", errors="ignore"))
-                 for f in args.files)
-        return {"academic_year": _pick_year(years)}
+    cat, details, meta = _load_pairs(
+        (str(f), Path(f).read_text(encoding="utf-8", errors="ignore")) for f in args.files)
 
     if args.list_slots:
         print("Slots present:", ", ".join(cat.slots()))
@@ -1339,8 +1507,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             out_name = str(_SCRIPT_DIR / "timetable-share.html")
         else:                                # bare --build -> offline default
             out_name = str(_SCRIPT_DIR / "timetable.html")
-        meta = _meta_for_files()
-        out = build_site(cat, out_name, meta=meta, cdn=args.cdn)
+        out = build_site(cat, out_name, meta=meta, cdn=args.cdn, details=details)
         kind = "ONLINE share build" if args.cdn else "offline build"
         print(f"Built front-end ({kind}): {out.resolve()}  ({len(cat)} courses, "
               f"academic year: {meta['academic_year'] or 'n/a'})")
@@ -1373,7 +1540,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         cat = cat.distinct()
 
     if args.json is not None:
-        payload = export_json(cat, _meta_for_files())
+        payload = export_json(cat, meta, details)
         if args.json == "-":
             print(payload)
         else:
@@ -1388,6 +1555,105 @@ def main(argv: Sequence[str] | None = None) -> int:
 if __name__ == "__main__":
     raise SystemExit(main())
 `;
+const GRAB_JS = `/* VS Course — one-click ASC grabber.
+ *
+ * Paste this WHOLE file into the DevTools Console (F12) of your logged-in ASC
+ * tab showing the "Running Courses" department list (Academic -> All About
+ * Courses -> Running Courses, with your year + semester picked). If the console
+ * refuses to paste, type "allow pasting" first and retry.
+ *
+ * It fetches every department's running-courses page plus every course's
+ * detail page over your existing session — same-origin GETs only, exactly the
+ * links the page itself shows; your password is never seen or stored — then
+ * downloads ONE asc-courses-<year>-sem<n>.json. Drop that file onto VS Course.
+ */
+(async () => {
+  "use strict";
+
+  // Collect every same-origin frame document (ASC is a frameset).
+  const docs = [];
+  (function walk(w) {
+    try { if (w.document) docs.push(w.document); } catch (e) { return; }
+    for (let i = 0; i < w.frames.length; i++) walk(w.frames[i]);
+  })(window);
+
+  // The department list lives in one of the frames as plain GET links.
+  let deptLinks = [], hostDoc = null;
+  for (const d of docs) {
+    const as = [...d.querySelectorAll('a[href*="RunningCourses.jsp?deptcd="]')];
+    if (as.length && !hostDoc) hostDoc = d;
+    deptLinks.push(...as.map(a => a.href));
+  }
+  deptLinks = [...new Set(deptLinks)];
+  if (!deptLinks.length) {
+    alert("No department links found.\\nOpen: Academic \\u2192 All About Courses \\u2192 " +
+          "Running Courses, pick the year + semester, then run this again.");
+    return;
+  }
+
+  // Progress toast. The top page is a frameset (renders no children), so the
+  // toast goes into the frame that holds the department list.
+  const ui = hostDoc.createElement("div");
+  ui.style.cssText = "position:fixed;top:12px;right:12px;z-index:2147483647;" +
+    "background:#1f2430;color:#fff;font:13px/1.5 sans-serif;padding:10px 14px;" +
+    "border-radius:9px;box-shadow:0 6px 20px rgba(0,0,0,.35);max-width:340px";
+  hostDoc.body.appendChild(ui);
+  const status = t => { ui.textContent = "VS Course grabber \\u2014 " + t; console.log("[grab]", t); };
+
+  const fetchText = async url => {
+    const r = await fetch(url, { credentials: "include" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return r.text();
+  };
+
+  const first = new URL(deptLinks[0]);
+  const year = first.searchParams.get("year") || "";
+  const sem = first.searchParams.get("semester") || "";
+  const bundle = { kind: "asc-bundle", version: 1, grabbed_at: new Date().toISOString(),
+                   year, semester: sem, source: location.hostname,
+                   pages: [], details: {}, errors: [] };
+
+  // 1) Every department's running-courses page.
+  const codes = new Set();
+  for (let i = 0; i < deptLinks.length; i++) {
+    const url = deptLinks[i];
+    status(\`departments \${i + 1}/\${deptLinks.length}\\u2026\`);
+    try {
+      const html = await fetchText(url);
+      bundle.pages.push({ dept: new URL(url).searchParams.get("deptcd") || "", url, html });
+      for (const m of html.matchAll(/crsedetail\\.jsp\\?ccd=([^"'&\\s<>]+)/g))
+        codes.add(decodeURIComponent(m[1]).trim());
+    } catch (e) { bundle.errors.push({ url, error: String(e) }); }
+  }
+
+  // 2) Every course's detail page (official credits, half-sem flag, description).
+  const queue = [...codes], total = queue.length;
+  let done = 0;
+  const detailUrl = c => first.origin +
+    "/academic/CourseRegistration/Common/crsedetail.jsp?ccd=" + encodeURIComponent(c) + "&view=";
+  async function worker() {
+    for (let c; (c = queue.shift()) !== undefined;) {
+      const url = detailUrl(c);
+      try { bundle.details[c] = { url, html: await fetchText(url) }; }
+      catch (e) { bundle.errors.push({ url, error: String(e) }); }
+      done++;
+      if (done % 10 === 0 || done === total) status(\`course details \${done}/\${total}\\u2026\`);
+    }
+  }
+  await Promise.all(Array.from({ length: 6 }, () => worker()));
+
+  // 3) Download the single bundle file.
+  const name = \`asc-courses-\${year || "unknown"}-sem\${sem || "x"}.json\`;
+  const a = hostDoc.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(bundle)], { type: "application/json" }));
+  a.download = name;
+  hostDoc.body.appendChild(a); a.click(); a.remove();
+  status(\`done \\u2014 \${bundle.pages.length} dept pages, \${Object.keys(bundle.details).length} course details\` +
+         (bundle.errors.length ? \`, \${bundle.errors.length} fetches failed (kept going)\` : "") +
+         \`. Saved \${name} \\u2014 drop it onto VS Course.\`);
+  setTimeout(() => ui.remove(), 15000);
+})();
+`;   // grab.js source, embedded for copy-to-clipboard
 /* Pyodide runtime: prefer the LOCAL vendored copy (fully offline — no CDN/PyPI);
    fall back to the CDN only if the local files can't be reached. (Some browsers
    block file:// fetches of .wasm/.mjs; if so, serve the folder over http — see
@@ -1591,9 +1857,12 @@ function isCoreFirstYear(u){return u.level==="0xx" || u.level==="1xx";}
    (and the parser's plannable_key) — everything else follows. */
 function planKeyOf(u){return u.key;}
 
-/* ASSUMPTION: a unit's credits = manual override if set, else the parser's
-   data-derived estimate. Override logic is isolated to these two helpers. */
-function creditOf(u){const o=overrides[u.key]; return (o!=null && o!=="")?Number(o):(u.est_credits||0);}
+/* ASSUMPTION: a unit's credits = manual override if set, else the OFFICIAL ASC
+   credits when a grab.js bundle supplied them, else the parser's data-derived
+   estimate. Override logic is isolated to these two helpers. */
+function creditOf(u){const o=overrides[u.key];
+  if(o!=null && o!=="") return Number(o);
+  return (u.official_credits!=null)?u.official_credits:(u.est_credits||0);}
 function setOverride(key,val){
   if(val===""||val==null||isNaN(Number(val))) delete overrides[key]; else overrides[key]=Number(val);
   save(LS.credits,overrides); refresh();
@@ -1642,6 +1911,7 @@ function sortForView(us){
 /* ---------- badges ---------- */
 function tags(c){
   let h="";
+  if(c.half_sem) h+=`<span class="tag hs" title="Half-semester course (official ASC flag)">half-sem</span>`;
   if(c._otherAdv) h+=`<span class="tag other" title="Other department, advanced \u2013 often not allowed">other\u00b7adv</span>`;
   else if(c._other) h+=`<span class="tag other">other dept</span>`;
   else if(c.advanced) h+=`<span class="tag adv">advanced</span>`;
@@ -1663,7 +1933,8 @@ function mlabel(m){return `${m.day} ${m.start}\u2013${m.end}`+
    IITB representation, surfaced next to credits so the integer hours read clearly */
 function credLabel(u){const c=creditOf(u);
   const t=u.ltp?` <span class="ltp" title="L-T-P: weekly lecture-tutorial-lab hours">${esc(u.ltp)}</span>`:"";
-  return c?`<span class="cr" title="Credits (2L+2T+P)">${c} cr</span>${t}`:"";}
+  const src=(u.official_credits!=null)?"Credits (official ASC)":"Credits (estimated: 2L+2T+P)";
+  return c?`<span class="cr" title="${src}">${c} cr</span>${t}`:"";}
 
 function renderGrid(us){
   // one cell per (day, slot-family, start, end); units at the same time stack together
@@ -1688,7 +1959,7 @@ function renderGrid(us){
         return `<div class="cc ${dim?'dim':''} ${planned?'planned':''} ${clash?'clash':''} ${isCorePinned(u)?'core':''}">
           <span class="x" title="Hide this course" onclick="hideCourse('${esc(u.code)}')">\u00d7</span>
           <div class="code">${pin(u)} ${esc(u.code)} ${divBadge(u)} ${coreBadge(u)} ${tags(u)}</div>
-          <div class="nm">${esc(u.name)}</div><div class="crline">${credLabel(u)}</div>${restrictNote(u)}</div>`;
+          <div class="nm" title="${esc(u.description||"")}">${esc(u.name)}</div><div class="crline">${credLabel(u)}</div>${restrictNote(u)}</div>`;
       }).join("");
       h+=`</div>`;
     }
@@ -1771,7 +2042,7 @@ function renderList(us){
     const times=(u.meetings||[]).map(m=>`${m.day} ${m.start}`).join(", ")||"\u2014";
     h+=`<tr class="${u._otherAdv||u._elig==='restricted'?'dim':''}">
       <td>${pin(u)}</td>
-      <td class="code">${esc(u.code)} ${coreBadge(u)}</td><td>${esc(u.name)}${restrictNote(u)}</td>
+      <td class="code">${esc(u.code)} ${coreBadge(u)}</td><td title="${esc(u.description||"")}">${esc(u.name)}${restrictNote(u)}</td>
       <td>${u.division?esc(u.division):'<span class="muted">\u2014</span>'}</td>
       <td class="slotcell">${(u.slots||[]).map(s=>`<span class="pill ${state.busy.has(s)?"busy":""}">${esc(s)}</span>`).join("")||"\u2014"}</td>
       <td class="muted">${esc(times)}</td>
@@ -2112,6 +2383,8 @@ function unitsFromCourses(courses){
       source:rep.source, division:rep.division, restrictions:rep.restrictions,
       slots:[...new Set(rows.map(c=>c.slot).filter(Boolean))].sort(), meetings,
       est_credits:rep.est_credits||0, ltp:rep.ltp||"", credit_src:rep.credit_src||"formula",
+      official_credits:(rep.official_credits!=null)?rep.official_credits:null,
+      half_sem:(rep.half_sem!=null)?rep.half_sem:null, description:rep.description||"",
       contact_hours:rep.contact_hours||0, sections:rows.length};
   }
   return out;
@@ -2135,8 +2408,10 @@ function applyDataset(){
   state.depts=new Set(DEPTS); state.levels=new Set(LEVELS); state.types=new Set(TYPES);
   state.busy=new Set([...state.busy].filter(s=>SLOT_ORDER.includes(s)));
   document.getElementById("s-total").textContent=new Set(UNITS.map(u=>u.code)).size;
+  const credSrc = UNITS.some(u=>u.official_credits!=null)
+    ? "official ASC credits" : "credits est. from ASC slots";
   document.getElementById("sub").textContent = UNITS.length
-    ? `${UNITS.length} units \u00b7 ${new Set(UNITS.map(u=>u.code)).size} courses \u00b7 ${DEPTS.length} dept(s) \u00b7 credits est. from ASC slots`
+    ? `${UNITS.length} units \u00b7 ${new Set(UNITS.map(u=>u.code)).size} courses \u00b7 ${DEPTS.length} dept(s) \u00b7 ${credSrc}`
     : "Drop ASC .html pages below to load courses.";
   renderFiles(); initProfile(); refresh();
 }
@@ -2204,7 +2479,7 @@ function bootPyodide(){
 def _parse_files(pairs):
     return json.dumps(asc_parser.parse_payload(pairs.to_py()))
 _parse_files`);
-    setParserStatus("Parser ready \u2014 drop ASC .html pages to add courses.","ready");
+    setParserStatus("Parser ready \u2014 drop ASC .html pages or a grabbed .json to add courses.","ready");
   })();
   pyBoot.catch(()=>setParserStatus(
     "Couldn't load the Python parser. The bundled runtime failed and the online "+
@@ -2214,6 +2489,17 @@ _parse_files`);
 
 /* ---------- upload ---------- */
 function stem(name){return (name||"").replace(/\.[^.]*$/,"");}
+/* copy the embedded grab.js to the clipboard (see the .grab-help steps) */
+async function copyGrabber(){
+  if(!GRAB_JS){alert("This page was built without grab.js \u2014 copy it from the VS Course repo instead.");return;}
+  try{ await navigator.clipboard.writeText(GRAB_JS); }
+  catch(e){ // clipboard API needs a secure context; fall back to execCommand
+    const t=document.createElement("textarea"); t.value=GRAB_JS;
+    document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove();
+  }
+  const el=document.getElementById("grabCopied");
+  if(el){el.textContent="copied \u2713"; setTimeout(()=>{el.textContent="";},2500);}
+}
 async function addFiles(fileArr){
   await bootPyodide();
   if(!pyParse) throw new Error("parser unavailable");
@@ -2224,7 +2510,8 @@ async function addFiles(fileArr){
     const courses=payload.courses||[];
     const units=payload.units||{};                          // plannable (course+division) units
     const ay=(payload.meta&&payload.meta.academic_year!=null)?payload.meta.academic_year:null;
-    const dept=courses.length ? (courses[0].source||stem(file.name)) : stem(file.name);
+    const dept=(payload.meta&&payload.meta.kind==="bundle") ? "ALL"
+      : (courses.length ? (courses[0].source||stem(file.name)) : stem(file.name));
     files=files.filter(f=>f.name!==file.name);              // replace a same-named file
     files.push({id:++fileSeq, name:file.name, dept, count:courses.length, courses, units, academic_year:ay, show:true});
   }
@@ -2235,7 +2522,7 @@ async function handleAdd(fileArr){
   try{
     setParserStatus("Parsing "+fileArr.length+" file(s)\u2026","loading");
     await addFiles(fileArr);
-    setParserStatus("Parser ready \u2014 drop more ASC .html pages to add courses.","ready");
+    setParserStatus("Parser ready \u2014 drop more ASC pages or bundles to add courses.","ready");
   }catch(err){
     if(pyParse) setParserStatus("Parse failed: "+((err&&err.message)||err),"error");
     // else: bootPyodide() already showed the offline/CDN message
@@ -2273,8 +2560,8 @@ const dz=document.getElementById("dropzone"), fp=document.getElementById("filepi
 dz.onclick=()=>fp.click();
 dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("drag");});
 dz.addEventListener("dragleave",()=>dz.classList.remove("drag"));
-dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("drag");
-  handleAdd([...e.dataTransfer.files].filter(f=>/\.html?$/i.test(f.name)));});
+  dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("drag");
+  handleAdd([...e.dataTransfer.files].filter(f=>/\.(html?|json)$/i.test(f.name)));});
 fp.onchange=e=>{handleAdd([...e.target.files]); e.target.value="";};
 document.getElementById("clearData").onclick=()=>{
   if(files.length && !confirm("Remove all loaded courses from this browser?")) return;
@@ -2282,7 +2569,8 @@ document.getElementById("clearData").onclick=()=>{
 };
 document.getElementById("foot").textContent=
   "Parsed in-browser by asc_parser.py (Pyodide). Slot timings: official IIT-B New General Slot Pattern (Autumn 2026-27). "+
-  "Credits are estimated (C=2L+2T+P, L/P = rounded weekly lecture/lab hours, T=1 if a tutorial exists) "+
+  "Credits: official ASC values when loaded from a grab.js bundle, otherwise estimated "+
+  "(C=2L+2T+P, L/P = rounded weekly lecture/lab hours, T=1 if a tutorial exists) "+
   "per course \u2014 seminars/R&D use a fixed course-type table; override any course in My Plan. "+
   "Eligibility inferred from ASC restriction rules \u2014 always confirm on ASC.";
 

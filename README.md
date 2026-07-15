@@ -56,13 +56,34 @@ internet connection, whereas the offline build above does not.
 
 The tool starts empty. It ships with no course data, because your course list is yours.
 
-First, install the free SingleFile browser extension. This step is essential: ASC
-renders its course listing inside nested frames, so a plain "Save Page As" will not
-capture it. [SingleFile](https://github.com/gildas-lormeau/SingleFile) flattens the
-entire page (frames, styles, everything) into one `.html` file, which is exactly what
-VS Course reads.
+### The one-click way (recommended): grab.js
 
-Install it for [Firefox](https://addons.mozilla.org/firefox/addon/single-file),
+No extension, no per-department clicking. `grab.js` runs inside your own logged-in ASC
+tab, fetches **every department's course list plus every course's official detail page**
+(real credits, half-semester flag, course description) over your existing session, and
+downloads it all as one `asc-courses-<year>-sem<n>.json`. Your password never touches
+the script; it only follows the same links the page already shows you.
+
+1. Log in to ASC and open **Academic → All About Courses → Running Courses**; pick the
+   year and semester so the department list is showing.
+2. Press `F12` → **Console**. (If the console refuses to paste, type `allow pasting`
+   and press Enter first.)
+3. Paste the contents of `grab.js` (the tool also has a "copy the grabber script" link
+   in its upload box) and press Enter.
+4. Wait a minute or two while it walks all the departments, then drop the downloaded
+   `.json` onto VS Course.
+
+Courses loaded this way show **official ASC credits** (the estimate formula stays for
+everything else), a `half-sem` tag where ASC flags one, and the course description on
+hover.
+
+### The manual way (fallback): SingleFile
+
+If you would rather not touch the console, the original flow still works. Install the
+free [SingleFile](https://github.com/gildas-lormeau/SingleFile) extension — essential,
+because ASC renders its course listing inside nested frames, so a plain "Save Page As"
+will not capture it. Get it for
+[Firefox](https://addons.mozilla.org/firefox/addon/single-file),
 [Chrome / Edge / Brave](https://chromewebstore.google.com/detail/singlefile/mpiodijhokgodhhofbcjdecpffjipkle),
 [Safari](https://apps.apple.com/us/app/singlefile-for-safari/id6444322545), or
 [Firefox for Android](https://addons.mozilla.org/android/addon/single-file).
@@ -75,7 +96,7 @@ Then:
 3. Drag and drop that saved `.html` onto the VS Course tool.
 
 Repeat for as many departments as you like. Add several, then toggle them on and off as
-you compare options. All parsing happens client-side, live.
+you compare options. Either way, all parsing happens client-side, live.
 
 ## Rebuilding (for tinkerers)
 
@@ -89,7 +110,8 @@ python3 asc_parser.py --cdn     # share build   -> timetable-share.html (uses a 
 ```
 
 Edit `template.html` for layout and styling, edit `asc_parser.py` for parsing logic,
-then rebuild.
+edit `grab.js` for what gets fetched from ASC (it is embedded into the page at build
+time, for the copy-to-clipboard link), then rebuild.
 
 ## What Claude Opus thinks of ASC
 
@@ -110,6 +132,13 @@ Because a repo you cannot laugh at is a repo you will never open again:
   ASC's frameset-era HTML, it parses your courses, estimates your credits, builds the
   website, and smuggles a copy of itself into every page it generates. Single source of
   truth, zero chill.
+- `grab.js`: the errand runner. You paste it into a console it was not invited to, and
+  it politely visits every department and every course detail page on your behalf,
+  then hands you one file and leaves. Does in ninety seconds what registration season
+  does to you in ninety minutes.
+- `_offline_test.py`: the trust-nobody twin. Cuts the internet, boots the page from the
+  local runtime, uploads real dumps, and interrogates every feature until it confesses.
+  If it prints PASS, you may relax.
 - `timetable.html`: the offline build. A 120 KB page that quietly boots a 14 MB Python
   runtime the instant you open it, then runs with your Wi-Fi switched off out of sheer
   principle.

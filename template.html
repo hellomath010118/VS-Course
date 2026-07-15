@@ -48,6 +48,11 @@
   .dz-sub{font-size:12px;color:var(--muted);margin-top:3px}
   .dz-sub.loading{color:var(--warn)} .dz-sub.ready{color:var(--ok)} .dz-sub.error{color:var(--busy)}
   .linklike{color:var(--accent);cursor:pointer;text-decoration:underline}
+  .grab-help{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
+  .grab-help summary{cursor:pointer;font-size:12.5px;color:var(--muted)}
+  .grab-help ol{margin:8px 0 2px 18px;padding:0;font-size:12.5px}
+  .grab-help li{margin:3px 0}
+  .grab-help code{background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:0 4px;font-size:11.5px}
   .filelist{margin-top:10px;display:flex;flex-direction:column}
   .fitem{display:flex;gap:8px;align-items:center;padding:6px 2px;border-bottom:1px solid var(--line)}
   .fitem:last-child{border-bottom:0}
@@ -87,6 +92,7 @@
   .tag.restricted{background:var(--busy-soft);color:var(--busy)}
   .tag.restrictedov{background:var(--warn-soft);color:var(--warn)}
   .tag.other{background:#eef2ff;color:#4338ca}
+  .tag.hs{background:#e0f2fe;color:#0369a1}
 
   /* weekly grid */
   .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;align-items:start}
@@ -234,14 +240,25 @@
     <div class="row">
       <span class="lbl">Courses</span>
       <div id="dropzone" class="dropzone">
-        <div class="dz-main">Drop ASC <b>.html</b> pages here, or <span class="linklike">browse</span></div>
+        <div class="dz-main">Drop ASC <b>.html</b> pages or a grabbed <b>.json</b> here, or <span class="linklike">browse</span></div>
         <div class="dz-sub" id="parserStatus">Loading parser…</div>
       </div>
-      <input type="file" id="filepick" accept=".html,.htm" multiple hidden>
+      <input type="file" id="filepick" accept=".html,.htm,.json" multiple hidden>
       <span class="spacer"></span>
       <button class="btn" id="clearData">Clear data</button>
     </div>
     <div id="fileList" class="filelist"></div>
+    <!-- one-click grabber: fetches ALL departments + official course details
+         over the user's own logged-in ASC session (see grab.js) -->
+    <details class="grab-help">
+      <summary>Get <b>every department + official credits &amp; descriptions</b> in one go (no extension needed)</summary>
+      <ol>
+        <li>Log in to ASC and open <b>Academic → All About Courses → Running Courses</b>; pick the year &amp; semester so the department list shows.</li>
+        <li>Press <b>F12</b> → <b>Console</b> tab. (If pasting is blocked, type <code>allow pasting</code> and press Enter first.)</li>
+        <li><span class="linklike" onclick="copyGrabber()">Copy the grabber script</span> <span class="hint" id="grabCopied"></span>, paste it into the console, press Enter.</li>
+        <li>Wait a minute or two — it downloads <b>asc-courses-….json</b> (runs entirely in your browser, on your own session). Drop that file above.</li>
+      </ol>
+    </details>
   </div>
 
   <!-- profile drives eligibility from the ASC restriction rules -->
@@ -326,9 +343,10 @@
     <div id="hiddenList"></div>
   </details>
 
-  <div id="emptyState" class="card hidden"><b>No courses loaded.</b> Drag &amp; drop one or more ASC
-    <b>.html</b> pages (saved with SingleFile) onto the box above — they're parsed right in your
-    browser (no upload to any server).</div>
+  <div id="emptyState" class="card hidden"><b>No courses loaded.</b> Drag &amp; drop a grabbed
+    <b>.json</b> bundle (see "Get every department…" above) or one or more SingleFile-saved ASC
+    <b>.html</b> pages onto the box above — they're parsed right in your browser (no upload to
+    any server).</div>
 
   <div id="view-grid"></div>
   <div id="view-slot" class="hidden"></div>
@@ -346,6 +364,7 @@
    - ASC_PARSER_SOURCE  : full text of asc_parser.py, imported in-browser via Pyodide */
 const DATA = /*__DATA__*/null;
 const ASC_PARSER_SOURCE = /*__ASCPY__*/"";
+const GRAB_JS = /*__GRABJS__*/"";   // grab.js source, embedded for copy-to-clipboard
 /* Pyodide runtime: prefer the LOCAL vendored copy (fully offline — no CDN/PyPI);
    fall back to the CDN only if the local files can't be reached. (Some browsers
    block file:// fetches of .wasm/.mjs; if so, serve the folder over http — see
@@ -549,9 +568,12 @@ function isCoreFirstYear(u){return u.level==="0xx" || u.level==="1xx";}
    (and the parser's plannable_key) — everything else follows. */
 function planKeyOf(u){return u.key;}
 
-/* ASSUMPTION: a unit's credits = manual override if set, else the parser's
-   data-derived estimate. Override logic is isolated to these two helpers. */
-function creditOf(u){const o=overrides[u.key]; return (o!=null && o!=="")?Number(o):(u.est_credits||0);}
+/* ASSUMPTION: a unit's credits = manual override if set, else the OFFICIAL ASC
+   credits when a grab.js bundle supplied them, else the parser's data-derived
+   estimate. Override logic is isolated to these two helpers. */
+function creditOf(u){const o=overrides[u.key];
+  if(o!=null && o!=="") return Number(o);
+  return (u.official_credits!=null)?u.official_credits:(u.est_credits||0);}
 function setOverride(key,val){
   if(val===""||val==null||isNaN(Number(val))) delete overrides[key]; else overrides[key]=Number(val);
   save(LS.credits,overrides); refresh();
@@ -600,6 +622,7 @@ function sortForView(us){
 /* ---------- badges ---------- */
 function tags(c){
   let h="";
+  if(c.half_sem) h+=`<span class="tag hs" title="Half-semester course (official ASC flag)">half-sem</span>`;
   if(c._otherAdv) h+=`<span class="tag other" title="Other department, advanced \u2013 often not allowed">other\u00b7adv</span>`;
   else if(c._other) h+=`<span class="tag other">other dept</span>`;
   else if(c.advanced) h+=`<span class="tag adv">advanced</span>`;
@@ -621,7 +644,8 @@ function mlabel(m){return `${m.day} ${m.start}\u2013${m.end}`+
    IITB representation, surfaced next to credits so the integer hours read clearly */
 function credLabel(u){const c=creditOf(u);
   const t=u.ltp?` <span class="ltp" title="L-T-P: weekly lecture-tutorial-lab hours">${esc(u.ltp)}</span>`:"";
-  return c?`<span class="cr" title="Credits (2L+2T+P)">${c} cr</span>${t}`:"";}
+  const src=(u.official_credits!=null)?"Credits (official ASC)":"Credits (estimated: 2L+2T+P)";
+  return c?`<span class="cr" title="${src}">${c} cr</span>${t}`:"";}
 
 function renderGrid(us){
   // one cell per (day, slot-family, start, end); units at the same time stack together
@@ -646,7 +670,7 @@ function renderGrid(us){
         return `<div class="cc ${dim?'dim':''} ${planned?'planned':''} ${clash?'clash':''} ${isCorePinned(u)?'core':''}">
           <span class="x" title="Hide this course" onclick="hideCourse('${esc(u.code)}')">\u00d7</span>
           <div class="code">${pin(u)} ${esc(u.code)} ${divBadge(u)} ${coreBadge(u)} ${tags(u)}</div>
-          <div class="nm">${esc(u.name)}</div><div class="crline">${credLabel(u)}</div>${restrictNote(u)}</div>`;
+          <div class="nm" title="${esc(u.description||"")}">${esc(u.name)}</div><div class="crline">${credLabel(u)}</div>${restrictNote(u)}</div>`;
       }).join("");
       h+=`</div>`;
     }
@@ -729,7 +753,7 @@ function renderList(us){
     const times=(u.meetings||[]).map(m=>`${m.day} ${m.start}`).join(", ")||"\u2014";
     h+=`<tr class="${u._otherAdv||u._elig==='restricted'?'dim':''}">
       <td>${pin(u)}</td>
-      <td class="code">${esc(u.code)} ${coreBadge(u)}</td><td>${esc(u.name)}${restrictNote(u)}</td>
+      <td class="code">${esc(u.code)} ${coreBadge(u)}</td><td title="${esc(u.description||"")}">${esc(u.name)}${restrictNote(u)}</td>
       <td>${u.division?esc(u.division):'<span class="muted">\u2014</span>'}</td>
       <td class="slotcell">${(u.slots||[]).map(s=>`<span class="pill ${state.busy.has(s)?"busy":""}">${esc(s)}</span>`).join("")||"\u2014"}</td>
       <td class="muted">${esc(times)}</td>
@@ -1070,6 +1094,8 @@ function unitsFromCourses(courses){
       source:rep.source, division:rep.division, restrictions:rep.restrictions,
       slots:[...new Set(rows.map(c=>c.slot).filter(Boolean))].sort(), meetings,
       est_credits:rep.est_credits||0, ltp:rep.ltp||"", credit_src:rep.credit_src||"formula",
+      official_credits:(rep.official_credits!=null)?rep.official_credits:null,
+      half_sem:(rep.half_sem!=null)?rep.half_sem:null, description:rep.description||"",
       contact_hours:rep.contact_hours||0, sections:rows.length};
   }
   return out;
@@ -1093,8 +1119,10 @@ function applyDataset(){
   state.depts=new Set(DEPTS); state.levels=new Set(LEVELS); state.types=new Set(TYPES);
   state.busy=new Set([...state.busy].filter(s=>SLOT_ORDER.includes(s)));
   document.getElementById("s-total").textContent=new Set(UNITS.map(u=>u.code)).size;
+  const credSrc = UNITS.some(u=>u.official_credits!=null)
+    ? "official ASC credits" : "credits est. from ASC slots";
   document.getElementById("sub").textContent = UNITS.length
-    ? `${UNITS.length} units \u00b7 ${new Set(UNITS.map(u=>u.code)).size} courses \u00b7 ${DEPTS.length} dept(s) \u00b7 credits est. from ASC slots`
+    ? `${UNITS.length} units \u00b7 ${new Set(UNITS.map(u=>u.code)).size} courses \u00b7 ${DEPTS.length} dept(s) \u00b7 ${credSrc}`
     : "Drop ASC .html pages below to load courses.";
   renderFiles(); initProfile(); refresh();
 }
@@ -1162,7 +1190,7 @@ function bootPyodide(){
 def _parse_files(pairs):
     return json.dumps(asc_parser.parse_payload(pairs.to_py()))
 _parse_files`);
-    setParserStatus("Parser ready \u2014 drop ASC .html pages to add courses.","ready");
+    setParserStatus("Parser ready \u2014 drop ASC .html pages or a grabbed .json to add courses.","ready");
   })();
   pyBoot.catch(()=>setParserStatus(
     "Couldn't load the Python parser. The bundled runtime failed and the online "+
@@ -1172,6 +1200,17 @@ _parse_files`);
 
 /* ---------- upload ---------- */
 function stem(name){return (name||"").replace(/\.[^.]*$/,"");}
+/* copy the embedded grab.js to the clipboard (see the .grab-help steps) */
+async function copyGrabber(){
+  if(!GRAB_JS){alert("This page was built without grab.js \u2014 copy it from the VS Course repo instead.");return;}
+  try{ await navigator.clipboard.writeText(GRAB_JS); }
+  catch(e){ // clipboard API needs a secure context; fall back to execCommand
+    const t=document.createElement("textarea"); t.value=GRAB_JS;
+    document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove();
+  }
+  const el=document.getElementById("grabCopied");
+  if(el){el.textContent="copied \u2713"; setTimeout(()=>{el.textContent="";},2500);}
+}
 async function addFiles(fileArr){
   await bootPyodide();
   if(!pyParse) throw new Error("parser unavailable");
@@ -1182,7 +1221,8 @@ async function addFiles(fileArr){
     const courses=payload.courses||[];
     const units=payload.units||{};                          // plannable (course+division) units
     const ay=(payload.meta&&payload.meta.academic_year!=null)?payload.meta.academic_year:null;
-    const dept=courses.length ? (courses[0].source||stem(file.name)) : stem(file.name);
+    const dept=(payload.meta&&payload.meta.kind==="bundle") ? "ALL"
+      : (courses.length ? (courses[0].source||stem(file.name)) : stem(file.name));
     files=files.filter(f=>f.name!==file.name);              // replace a same-named file
     files.push({id:++fileSeq, name:file.name, dept, count:courses.length, courses, units, academic_year:ay, show:true});
   }
@@ -1193,7 +1233,7 @@ async function handleAdd(fileArr){
   try{
     setParserStatus("Parsing "+fileArr.length+" file(s)\u2026","loading");
     await addFiles(fileArr);
-    setParserStatus("Parser ready \u2014 drop more ASC .html pages to add courses.","ready");
+    setParserStatus("Parser ready \u2014 drop more ASC pages or bundles to add courses.","ready");
   }catch(err){
     if(pyParse) setParserStatus("Parse failed: "+((err&&err.message)||err),"error");
     // else: bootPyodide() already showed the offline/CDN message
@@ -1231,8 +1271,8 @@ const dz=document.getElementById("dropzone"), fp=document.getElementById("filepi
 dz.onclick=()=>fp.click();
 dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("drag");});
 dz.addEventListener("dragleave",()=>dz.classList.remove("drag"));
-dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("drag");
-  handleAdd([...e.dataTransfer.files].filter(f=>/\.html?$/i.test(f.name)));});
+  dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("drag");
+  handleAdd([...e.dataTransfer.files].filter(f=>/\.(html?|json)$/i.test(f.name)));});
 fp.onchange=e=>{handleAdd([...e.target.files]); e.target.value="";};
 document.getElementById("clearData").onclick=()=>{
   if(files.length && !confirm("Remove all loaded courses from this browser?")) return;
@@ -1240,7 +1280,8 @@ document.getElementById("clearData").onclick=()=>{
 };
 document.getElementById("foot").textContent=
   "Parsed in-browser by asc_parser.py (Pyodide). Slot timings: official IIT-B New General Slot Pattern (Autumn 2026-27). "+
-  "Credits are estimated (C=2L+2T+P, L/P = rounded weekly lecture/lab hours, T=1 if a tutorial exists) "+
+  "Credits: official ASC values when loaded from a grab.js bundle, otherwise estimated "+
+  "(C=2L+2T+P, L/P = rounded weekly lecture/lab hours, T=1 if a tutorial exists) "+
   "per course \u2014 seminars/R&D use a fixed course-type table; override any course in My Plan. "+
   "Eligibility inferred from ASC restriction rules \u2014 always confirm on ASC.";
 

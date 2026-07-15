@@ -1,10 +1,16 @@
 """
-Generic parser + query tool for IIT-B ASC course listings saved with SingleFile.
+Generic parser + query tool for IIT-B ASC course listings.
 
-Works on the HTML you get from: ASC -> course list page -> "SingleFile" save.
-That save is a *frameset*, and each frame's real HTML is stuffed into a
-`src="data:text/html,..."` URI. This tool digs the course table out of there,
-so you can just re-save the page every semester and re-run this.
+Two input formats, one parser:
+
+* SingleFile saves of an ASC course page. That save is a *frameset*, and each
+  frame's real HTML is stuffed into a `src="data:text/html,..."` URI. This tool
+  digs the course table out of there.
+* `asc-bundle` JSON produced by grab.js (pasted into the DevTools console of a
+  logged-in ASC tab): every department's running-courses page plus every
+  course's crsedetail.jsp page, fetched over the user's own session and saved
+  as one file. Bundles additionally carry OFFICIAL per-course facts (credits,
+  half-semester flag, description) that the listing table alone doesn't have.
 
 --------------------------------------------------------------------------------
 Design patterns used (asked for on purpose):
@@ -60,6 +66,19 @@ class Restriction:
     program: str      # e.g. "B.Tech.", or "ALL"
     allowed: bool     # True = Allowed, False = Deny
     overridable: bool
+
+
+@dataclass(frozen=True)
+class CourseDetail:
+    """Official per-course facts from ASC's crsedetail.jsp 'COURSE INFO' page."""
+    code: str
+    credits: float | None = None     # "Total Credits" (institute-official)
+    lecture: float | None = None     # weekly hours as listed
+    tutorial: float | None = None
+    practical: float | None = None
+    selfstudy: float | None = None
+    half_sem: bool | None = None     # "Half Semester" Y/N
+    description: str = ""
 
 
 @dataclass(frozen=True)
@@ -454,6 +473,79 @@ class ASCParser:
 
 
 # ----------------------------------------------------------------------------- 
+# Grabber bundles (grab.js) + the official course-detail page
+# -----------------------------------------------------------------------------
+BUNDLE_KIND = "asc-bundle"   # the "kind" marker grab.js writes into its JSON
+
+
+def _flat_code(code: str) -> str:
+    """Course-code join key: 'CS 101' / 'cs101' -> 'CS101'."""
+    return re.sub(r"\s+", "", code or "").upper()
+
+
+def _maybe_bundle(text: str) -> dict | None:
+    """Parse ``text`` as a grab.js bundle; ``None`` when it isn't one."""
+    if not text.lstrip().startswith("{"):
+        return None
+    import json
+    try:
+        obj = json.loads(text)
+    except ValueError:
+        return None
+    return obj if isinstance(obj, dict) and obj.get("kind") == BUNDLE_KIND else None
+
+
+def parse_course_detail(code: str, html_text: str) -> CourseDetail:
+    """Parse one crsedetail.jsp page: a two-column 'Fields | Content' table."""
+    soup = BeautifulSoup(html_text, "html.parser")
+    fields: dict[str, str] = {}
+    for tr in soup.find_all("tr"):
+        cells = tr.find_all(["td", "th"])
+        if len(cells) >= 2:
+            k = ASCParser._text(cells[0]).lower().rstrip(":")
+            if k and k not in fields:
+                fields[k] = ASCParser._text(cells[1])
+
+    def num(key: str) -> float | None:
+        m = re.search(r"\d+(?:\.\d+)?", fields.get(key, ""))
+        return float(m.group()) if m else None
+
+    hs = fields.get("half semester", "").strip().upper()[:1]
+    return CourseDetail(
+        code=code,
+        credits=num("total credits"),
+        lecture=num("lecture"),
+        tutorial=num("tutorial"),
+        practical=num("practical"),
+        selfstudy=num("selfstudy"),
+        half_sem={"Y": True, "N": False}.get(hs),
+        description=fields.get("description", ""),
+    )
+
+
+def _load_bundle(obj: dict) -> tuple[list["Course"], dict[str, CourseDetail], int | None]:
+    """Expand a grab.js bundle into courses + official details + academic year.
+
+    Each captured department page goes through the SAME parser as a SingleFile
+    upload (``load_text`` falls back to the raw document when there are no
+    data-URI frames). Details are keyed by flattened course code for joining.
+    """
+    courses: list[Course] = []
+    for page in obj.get("pages", []):
+        src = (page.get("dept") or "").split(",")[0].strip()
+        courses.extend(load_text(page.get("html", ""), source=src))
+    details: dict[str, CourseDetail] = {}
+    for code, entry in (obj.get("details") or {}).items():
+        html_text = (entry or {}).get("html", "")
+        if html_text:
+            details[_flat_code(code)] = parse_course_detail(code, html_text)
+    m = re.match(r"(20\d{2})", str(obj.get("year", "")))
+    year = int(m.group(1)) if m else _pick_year(
+        _extract_academic_year(p.get("html", "")) for p in obj.get("pages", []))
+    return courses, details, year
+
+
+# ----------------------------------------------------------------------------- 
 # Timetable metadata (IIT-B "New General Slot Pattern", Autumn 2026-27)
 # -----------------------------------------------------------------------------
 # slot -> {days, time}. Used by the front-end to show when each slot meets.
@@ -792,14 +884,19 @@ def _pick_year(years: Iterable[int | None]) -> int | None:
 # -----------------------------------------------------------------------------
 # Exporters
 # -----------------------------------------------------------------------------
-def _payload(catalog: CourseCatalog, meta: dict | None = None) -> dict:
+def _payload(catalog: CourseCatalog, meta: dict | None = None,
+             details: dict[str, CourseDetail] | None = None) -> dict:
     """The canonical front-end payload: courses + plannable units + metadata.
 
     ``courses`` stays a flat per-row list (unchanged shape + new schedule fields)
     for back-compat; ``units`` groups those rows into plannable (course+division)
     units with aggregated meetings and estimated credits — the UI renders those
     so uncertain heuristics stay in this one file. ``meta`` carries page-level
-    facts, e.g. ``{"academic_year": 2026}`` (``None`` when unknown).
+    facts, e.g. ``{"academic_year": 2026}`` (``None`` when unknown). ``details``
+    (from a grab.js bundle) adds OFFICIAL facts per course: ``official_credits``
+    (+ ``credit_src="official"``), an official L-T-P, ``half_sem`` and
+    ``description``. Estimates stay in ``est_credits`` untouched; the UI prefers
+    official when present.
     """
     courses = list(catalog)
     units = build_units(courses)
@@ -813,6 +910,27 @@ def _payload(catalog: CourseCatalog, meta: dict | None = None) -> dict:
             d["ltp"] = u["ltp"]
             d["credit_src"] = u["credit_src"]
         course_dicts.append(d)
+    if details:
+        def _fmt(x: float | None) -> str:
+            return str(int(x)) if x and float(x).is_integer() else str(x or 0)
+
+        def _apply(d: dict) -> None:
+            cd = details.get(_flat_code(d["code"]))
+            if not cd:
+                return
+            if cd.credits is not None:
+                d["official_credits"] = int(cd.credits) if cd.credits.is_integer() else cd.credits
+                d["credit_src"] = "official"
+            if any(x is not None for x in (cd.lecture, cd.tutorial, cd.practical)):
+                d["ltp"] = f"{_fmt(cd.lecture)}-{_fmt(cd.tutorial)}-{_fmt(cd.practical)}"
+            if cd.half_sem is not None:
+                d["half_sem"] = cd.half_sem
+            if cd.description:
+                d["description"] = cd.description
+        for u in units.values():
+            _apply(u)
+        for d in course_dicts:
+            _apply(d)
     return {
         "courses": course_dicts,
         "units": units,
@@ -822,10 +940,11 @@ def _payload(catalog: CourseCatalog, meta: dict | None = None) -> dict:
     }
 
 
-def export_json(catalog: CourseCatalog, meta: dict | None = None) -> str:
+def export_json(catalog: CourseCatalog, meta: dict | None = None,
+                details: dict[str, CourseDetail] | None = None) -> str:
     """Serialize a catalog to JSON (courses + slot/grid + page metadata)."""
     import json
-    return json.dumps(_payload(catalog, meta), ensure_ascii=False, indent=1)
+    return json.dumps(_payload(catalog, meta, details), ensure_ascii=False, indent=1)
 
 
 def _js_backtick(src: str) -> str:
@@ -843,7 +962,8 @@ def _js_backtick(src: str) -> str:
 
 def build_site(catalog: CourseCatalog, out_html: str | Path,
                template: str | Path | None = None,
-               meta: dict | None = None, cdn: bool = False) -> Path:
+               meta: dict | None = None, cdn: bool = False,
+               details: dict[str, CourseDetail] | None = None) -> Path:
     """Render the self-contained front-end HTML.
 
     The page runs THIS parser in the browser via Pyodide, so we embed the full
@@ -864,14 +984,22 @@ def build_site(catalog: CourseCatalog, out_html: str | Path,
     tpl_path = Path(template) if template else _SCRIPT_DIR / "template.html"
     html_tpl = Path(tpl_path).read_text(encoding="utf-8")
     # initial dataset as JSON; guard against premature </script>
-    blob = json.dumps(_payload(catalog, meta), ensure_ascii=False).replace("</", "<\\/")
+    blob = json.dumps(_payload(catalog, meta, details), ensure_ascii=False).replace("</", "<\\/")
     # embed this exact module (via __file__) so Pyodide is the one-and-only parser
     parser_lit = "`" + _js_backtick(_HERE.read_text(encoding="utf-8")) + "`"
+    # embed grab.js so the page can offer a copy-to-clipboard grabber
+    grab_path = _SCRIPT_DIR / "grab.js"
+    grab_lit = ("`" + _js_backtick(grab_path.read_text(encoding="utf-8")) + "`"
+                if grab_path.exists() else '""')
+    if cdn:  # hard-select the template's existing CDN code path (skip local files)
+        html_tpl = html_tpl.replace("/*__FORCE_CDN__*/false", "/*__FORCE_CDN__*/true")
+    # ORDER MATTERS: this module's source contains every marker string above
+    # (right here, in this function), so embedding it must come LAST — a global
+    # replace done after it would also rewrite the embedded copy of the parser.
     out = (html_tpl
            .replace("/*__DATA__*/null", blob)
+           .replace('/*__GRABJS__*/""', grab_lit)
            .replace('/*__ASCPY__*/""', parser_lit))
-    if cdn:  # hard-select the template's existing CDN code path (skip local files)
-        out = out.replace("/*__FORCE_CDN__*/false", "/*__FORCE_CDN__*/true")
     out_path = Path(out_html)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(out, encoding="utf-8")
@@ -908,23 +1036,49 @@ def load_many(paths: Iterable[str | Path]) -> CourseCatalog:
     return CourseCatalog(merged)
 
 
+def _load_pairs(pairs: Iterable[tuple[str, str]],
+                ) -> tuple[CourseCatalog, dict[str, CourseDetail], dict]:
+    """Load ``(filename, text)`` pairs — SingleFile pages and/or grab.js bundles.
+
+    THE shared input path for the browser (``parse_payload``) and the CLI: each
+    text is sniffed (``_maybe_bundle``); bundles expand into their captured
+    department pages + official course details, everything else parses as an
+    ASC page. Returns (merged catalog, details-by-code, meta).
+    """
+    merged: list[Course] = []
+    details: dict[str, CourseDetail] = {}
+    years: list[int | None] = []
+    meta: dict = {}
+    for name, text in pairs:
+        bundle = _maybe_bundle(text)
+        if bundle is not None:
+            b_courses, b_details, b_year = _load_bundle(bundle)
+            merged.extend(b_courses)
+            details.update(b_details)
+            years.append(b_year)
+            meta["kind"] = "bundle"
+            if bundle.get("semester"):
+                meta["semester"] = str(bundle["semester"])
+        else:
+            merged.extend(load_text(text, source=Path(name).stem if name else ""))
+            years.append(_extract_academic_year(text))
+    meta["academic_year"] = _pick_year(years)
+    return CourseCatalog(merged), details, meta
+
+
 def parse_payload(pairs: Iterable[tuple[str, str]]) -> dict:
-    """Parse ``(filename, html_text)`` pairs into the front-end payload dict.
+    """Parse ``(filename, text)`` pairs into the front-end payload dict.
 
     Single browser-facing entry point: it runs the exact same parser as the CLI
     and returns the same shape ``build_site`` inlines
     (``{"courses": [...], "slot_info": ..., "day_grid": ..., "meta": ...}``),
     each course tagged by its file's dominant dept (fallback: the file-name
-    stem). ``meta.academic_year`` is derived from the page(s) (see
-    :func:`_extract_academic_year`), reconciled across files.
+    stem). Accepts SingleFile .html saves and grab.js .json bundles alike.
+    ``meta.academic_year`` is derived from the page(s)/bundle, reconciled
+    across files.
     """
-    merged: list[Course] = []
-    years: list[int | None] = []
-    for name, text in pairs:
-        stem = Path(name).stem if name else ""
-        merged.extend(load_text(text, source=stem))
-        years.append(_extract_academic_year(text))
-    return _payload(CourseCatalog(merged), {"academic_year": _pick_year(years)})
+    catalog, details, meta = _load_pairs(pairs)
+    return _payload(catalog, meta, details)
 
 
 def _dominant_dept(courses: Sequence[Course], fallback: str = "") -> str:
@@ -950,8 +1104,9 @@ def _print_table(catalog: CourseCatalog) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Query ASC SingleFile course dumps.")
-    ap.add_argument("files", nargs="*", help="Zero or more SingleFile-saved ASC .html pages")
+    ap = argparse.ArgumentParser(description="Query ASC course dumps (SingleFile .html or grab.js .json).")
+    ap.add_argument("files", nargs="*",
+                    help="Zero or more SingleFile-saved ASC .html pages and/or grab.js .json bundles")
     ap.add_argument("--in-slot", nargs="+", metavar="S", help="keep courses running in these slots")
     ap.add_argument("--not-in-slot", nargs="+", metavar="S", help="drop courses running in these slots")
     ap.add_argument("--dept", nargs="+", metavar="D", help="keep only these departments, e.g. CS ME")
@@ -969,13 +1124,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                          "with no explicit --build OUT, writes <script_dir>/timetable-share.html")
     args = ap.parse_args(argv)
 
-    cat = load_many(args.files)
-
-    def _meta_for_files() -> dict:
-        """Page-level academic year across the input files (independent of filters)."""
-        years = (_extract_academic_year(Path(f).read_text(encoding="utf-8", errors="ignore"))
-                 for f in args.files)
-        return {"academic_year": _pick_year(years)}
+    cat, details, meta = _load_pairs(
+        (str(f), Path(f).read_text(encoding="utf-8", errors="ignore")) for f in args.files)
 
     if args.list_slots:
         print("Slots present:", ", ".join(cat.slots()))
@@ -992,8 +1142,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             out_name = str(_SCRIPT_DIR / "timetable-share.html")
         else:                                # bare --build -> offline default
             out_name = str(_SCRIPT_DIR / "timetable.html")
-        meta = _meta_for_files()
-        out = build_site(cat, out_name, meta=meta, cdn=args.cdn)
+        out = build_site(cat, out_name, meta=meta, cdn=args.cdn, details=details)
         kind = "ONLINE share build" if args.cdn else "offline build"
         print(f"Built front-end ({kind}): {out.resolve()}  ({len(cat)} courses, "
               f"academic year: {meta['academic_year'] or 'n/a'})")
@@ -1026,7 +1175,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         cat = cat.distinct()
 
     if args.json is not None:
-        payload = export_json(cat, _meta_for_files())
+        payload = export_json(cat, meta, details)
         if args.json == "-":
             print(payload)
         else:
