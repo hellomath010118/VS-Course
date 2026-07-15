@@ -64,8 +64,16 @@
     try {
       const html = await fetchText(url);
       bundle.pages.push({ dept: new URL(url).searchParams.get("deptcd") || "", url, html });
-      for (const m of html.matchAll(/crsedetail\.jsp\?ccd=([^"'&\s<>]+)/g))
-        codes.add(decodeURIComponent(m[1]).trim());
+      // NOTE: live hrefs carry RAW SPACES in the code ("ccd=CS 101&view="), so
+      // the value must be read up to the next & / quote, not the next space.
+      for (const m of html.matchAll(/crsedetail\.jsp\?ccd=([^"'&<>]+)/g)) {
+        let code = m[1];
+        try { code = decodeURIComponent(code); } catch (e) { /* keep raw */ }
+        code = code.replace(/\+/g, " ").replace(/\s+/g, " ").trim();
+        // real course codes contain digits; digit-less matches are bare dept
+        // links (e.g. "ccd=CS"), whose detail page just returns HTTP 500
+        if (/\d/.test(code)) codes.add(code);
+      }
     } catch (e) { bundle.errors.push({ url, error: String(e) }); }
   }
 
@@ -94,5 +102,7 @@
   status(`done \u2014 ${bundle.pages.length} dept pages, ${Object.keys(bundle.details).length} course details` +
          (bundle.errors.length ? `, ${bundle.errors.length} fetches failed (kept going)` : "") +
          `. Saved ${name} \u2014 drop it onto VS Course.`);
+  if (bundle.errors.length)
+    console.warn("[grab] failed fetches (also recorded in the bundle):", bundle.errors.slice(0, 10));
   setTimeout(() => ui.remove(), 15000);
 })();
