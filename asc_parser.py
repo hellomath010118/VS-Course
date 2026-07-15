@@ -104,6 +104,7 @@ class Course:
     slot_detail: str = ""  # full slot cell (days/times), e.g. "7 Wed-7A-.. Fri-7B-.."
     restrictions: tuple[Restriction, ...] = ()  # eligibility rules (allow/deny)
     source: str = ""       # provenance: which uploaded file/dept page this came from
+    section_note: str = "" # the "Division Definition" popup: what S1/D2/... MEAN
 
     @property
     def dept(self) -> str:
@@ -149,6 +150,7 @@ class Course:
             "venue": self.venue,
             "division": self.division,
             "source": self.source,
+            "section_note": self.section_note,
             "restrictions": [asdict(r) for r in self.restrictions],
             # schedule structure (see the "Schedule & credit heuristics" section)
             "meetings": parse_meetings(self.slot_detail, self.slot),
@@ -434,7 +436,22 @@ class ASCParser:
             division=col("division"),
             slot_detail=re.sub(r"\s+", " ", slot_cell).strip(),
             restrictions=restrictions,
+            section_note=self._section_note(tr),
         )
+
+    def _section_note(self, tr: Tag) -> str:
+        """The row's hidden 'Division Definition' popup (a div.placea next to the
+        'View' link): says what the sections MEAN — 'Sections based on first year
+        divisions', 'S1 B.Tech. EE / S2 DD EE', or straight roll-number lists.
+        Inline in RunningCourses.jsp, so this costs zero extra requests."""
+        d = tr.find("div", class_="placea")
+        if not d:
+            return ""
+        inner = d.find("div") or d          # the scrollable body, skipping the title bar
+        rows = [re.sub(r"\s+", " ", r.get_text(" ", strip=True)) for r in inner.find_all("tr")]
+        rows = [r for r in rows
+                if r and "section detail for course" not in r.lower() and r.lower() != "close"]
+        return "\n".join(dict.fromkeys(rows))   # dedupe, keep order
 
     def _parse_restrictions(self, td: Tag) -> tuple[Restriction, ...]:
         """Parse the nested 'Restrictions' popup table (allow/deny rules)."""
@@ -821,6 +838,10 @@ def build_units(courses: Sequence[Course]) -> dict[str, dict]:
     for key, rows in groups.items():
         meetings = _dedupe_meetings(m for c in rows for m in parse_meetings(c.slot_detail, c.slot))
         cc = cred_by_code[rows[0].code]
+        # the Division Definition popup describes the whole COURSE's sections;
+        # not every row repeats it, so fall back to any sibling division's copy
+        note = (next((c.section_note for c in rows if c.section_note), "")
+                or next((c.section_note for c in by_code[rows[0].code] if c.section_note), ""))
         rep = rows[0].as_dict()
         units[key] = {
             "key": key,
@@ -829,6 +850,7 @@ def build_units(courses: Sequence[Course]) -> dict[str, dict]:
             "category": rep["category"], "advanced": rep["advanced"],
             "instructor": rep["instructor"], "source": rep["source"],
             "division": rep["division"], "restrictions": rep["restrictions"],
+            "section_note": note,
             "slots": sorted({c.slot for c in rows if c.slot}),
             "meetings": meetings,
             "L": cc["L"], "T": cc["T"], "P": cc["P"], "ltp": cc["ltp"],

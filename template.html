@@ -161,6 +161,8 @@
   .cc.clash{box-shadow:inset 0 0 0 2px var(--clash-red)}
   .mdout{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre;
     overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px}
+  /* section/division definitions can be raw roll-number walls -> cap + scroll */
+  .secnote{display:block;max-height:110px;overflow:auto;overflow-wrap:anywhere}
   .pill.planned{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
   .div-badge{font-size:10.5px;background:#eef2ff;color:#4338ca;border-radius:6px;padding:0 6px;font-weight:600}
   .cr{font-size:11px;color:var(--ok);font-weight:600;white-space:nowrap}
@@ -704,7 +706,11 @@ const WEEKN={Mon:0,Tue:1,Wed:2,Thu:3,Fri:4,Sat:5,Sun:6};
 function pin(u){const on=inPlan(u);
   return `<span class="pin ${on?'on':''}" title="${on?'Remove from plan':'Add section to plan'}"
     onclick="event.stopPropagation();togglePlan('${esc(u.key)}')">${on?'\u2713':'\uFF0B'}</span>`;}
-function divBadge(u){return u.division?`<span class="div-badge">${esc(u.division)}</span>`:"";}
+function divBadge(u){
+  if(!u.division) return "";
+  const t=u.section_note?` title="${esc(u.section_note.split("\n")[0].slice(0,160))}${u.section_note.length>160?"\u2026":""}"`:"";
+  return `<span class="div-badge"${t}>${esc(u.division)}</span>`;
+}
 function mlabel(m){return `${m.day} ${m.start}\u2013${m.end}`+
   (m.rooms&&m.rooms.length?` \u00b7 ${esc(m.rooms.join(", "))}`:"");}
 /* credits + the L-T-P triple (weekly lecture-tutorial-lab hours) — the standard
@@ -739,6 +745,7 @@ function showInfo(key){
       <b>Instructor</b><span>${esc(u.instructor||"\u2014")}</span>
       <b>Slots</b><span>${(u.slots||[]).join(", ")||"\u2014"}</span>
       <b>Meets</b><span>${meets}</span>
+      ${u.section_note?`<b>Sections</b><span class="secnote">${esc(u.section_note).replace(/\n/g,"<br>")}</span>`:""}
       ${rest?`<b>Restriction</b><span>${esc(rest)}</span>`:""}
     </div>
     <p class="idesc ${u.description?"":"none"}">${esc(u.description||
@@ -1300,7 +1307,7 @@ function saveDataset(){
   // well under the localStorage quota. Units keep it — that's what the UI reads.
   const ok=save(LS.dataset,{
     files:files.map(f=>({name:f.name,dept:f.dept,count:f.count,
-      courses:(f.courses||[]).map(({description,...c})=>c),units:f.units,
+      courses:(f.courses||[]).map(({description,section_note,...c})=>c),units:f.units,
       academic_year:f.academic_year,show:f.show})),
     slot_info:SLOT_INFO, day_grid:DAY_GRID});
   if(!ok) setParserStatus("Couldn't cache the dataset (browser storage full) \u2014 "+

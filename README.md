@@ -29,7 +29,9 @@ into something you can actually plan with:
   any chat or notes app.
 - Click any course **name** — the grey text under the course code, in any view — for a
   dialog with the full official description, credits (and where they came from),
-  L-T-P, meeting times, and restriction reasons.
+  L-T-P, meeting times, restriction reasons, and what the divisions/sections mean
+  (ASC's "Division Definition" popup: "sections based on first year divisions",
+  "S1 = B.Tech. EE, S2 = DD EE", sometimes a literal wall of roll numbers).
 - **Share plan** downloads your selections as a tiny `.json`; a friend drops it onto
   their VS Course (with the same course bundle loaded) to see and tweak your
   timetable. Course data and selections travel as two small shareable files.

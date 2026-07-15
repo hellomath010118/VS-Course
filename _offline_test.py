@@ -167,6 +167,19 @@ def run():
             )
             print(f"== unscheduled bucket: {unsched}")
 
+            # --- section notes ("Division Definition" popups, inline in the dept
+            #     pages): MA 105's divisions carry the first-year explanation, and
+            #     the info dialog shows it as a "Sections" row ---
+            note = page.evaluate("""(()=>{
+              const u=UNITS.find(x=>x.code==='MA 105');
+              showInfo(u.key);
+              const dlg=document.getElementById('infoBody').innerHTML;
+              document.getElementById('infoBox').close();
+              return {note:(u.section_note||'').slice(0,60),
+                      inDlg:/Sections<\\/b>/.test(dlg)&&/first year divisions/.test(dlg)};
+            })()""")
+            print(f"== section note (MA 105): {note}")
+
             # --- plan mode: add two SAME-slot courses (CS 213 & SI 423, slot 1) -> clash ---
             page.evaluate("['CS 213','SI 423'].forEach(k=>{ if(!plan[k]) togglePlan(k); });")
             plan1 = page.evaluate(
@@ -401,7 +414,7 @@ def run():
             })()""")
             print(f"== core suggest/pin: {core}")
 
-            info = {"ma105_rows": ma105_rows, "unsched": unsched, "plan1": plan1,
+            info = {"ma105_rows": ma105_rows, "unsched": unsched, "note": note, "plan1": plan1,
                     "cred_after": cred_after, "plan2": plan2, "creds": creds, "react": react,
                     "chips": chips, "restrict": restrict, "busy": busy, "lab": lab,
                     "own": own, "only": only, "mark": mark, "md": md, "core": core}
@@ -460,6 +473,8 @@ def run():
                           credit:creditOf(u), half:u.half_sem, desc:(u.description||'').length,
                           ltp:u.ltp, hsTags:document.querySelectorAll('.tag.hs').length,
                           grabjs:GRAB_JS.length>0, crDom:crDom.trim(), dialog,
+                          secN:UNITS.filter(x=>x.section_note).length,
+                          secTxt:/first year divisions/.test(UNITS.map(x=>x.section_note||'').join(' ')),
                           fileLabel:document.querySelector('#fileList .pill')?.textContent||''};
                 })()""") or {}
             except Exception as e:
@@ -597,10 +612,14 @@ def run():
                      and bi.get("ltp") == "3-1-0" and bi.get("hsTags", 0) > 0
                      and bi.get("grabjs") is True and bi.get("fileLabel") == "ALL"
                      and bi.get("crDom") == "8 cr"          # official: no '~' marker
+                     and bi.get("secN", 0) >= 3 and bi.get("secTxt") is True
                      and (bi.get("dialog") or {}).get("open") is True
                      and (bi.get("dialog") or {}).get("hasDesc") is True)
+        nt = info.get("note", {})
+        note_ok = bool(nt.get("inDlg")) and "first year divisions" in nt.get("note", "")
         good = (ok
                 and info.get("ma105_rows") == 4
+                and note_ok
                 and info.get("unsched", {}).get("hasSection")
                 and info.get("plan1", {}).get("count") == 2
                 and len(info.get("plan1", {}).get("clash", [])) == 2
@@ -613,8 +632,8 @@ def run():
                 and share_ok and bundle_ok)
         print(f"\n   credits_ok={credits_ok}  react_ok={react_ok}  chips_ok={chips_ok}"
               f"  lab_ok={lab_ok}  own_ok={own_ok}  only_ok={only_ok}  mark_ok={mark_ok}"
-              f"  md_ok={md_ok}  lazy_ok={lazy_ok}  restrict_ok={restrict_ok}  busy_ok={busy_ok}"
-              f"  core_ok={core_ok}  share_ok={share_ok}  bundle_ok={bundle_ok}")
+              f"  md_ok={md_ok}  note_ok={note_ok}  lazy_ok={lazy_ok}  restrict_ok={restrict_ok}"
+              f"  busy_ok={busy_ok}  core_ok={core_ok}  share_ok={share_ok}  bundle_ok={bundle_ok}")
         print("==== RESULT:", "PASS" if good else "FAIL", "====")
         return 0 if good else 1
 
