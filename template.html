@@ -1263,7 +1263,7 @@ function applyDataset(){
   const credSrc = UNITS.some(u=>u.official_credits!=null)
     ? "official ASC credits" : "credits est. from ASC slots";
   document.getElementById("sub").textContent = UNITS.length
-    ? `${UNITS.length} units \u00b7 ${new Set(UNITS.map(u=>u.code)).size} courses \u00b7 ${DEPTS.length} dept(s) \u00b7 ${credSrc}`
+    ? `${UNITS.length} units \u00b7 ${new Set(UNITS.map(u=>u.code)).size} courses \u00b7 ${DEPTS.length} dept(s) \u00b7 ${credSrc} \u00b7 click any course NAME for details & description`
     : "Drop ASC .html pages below to load courses.";
   renderFiles(); initProfile(); refresh();
 }

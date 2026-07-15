@@ -17,7 +17,9 @@ into something you can actually plan with:
   same time.
 - A weekly "When I'm busy" table, so your timetable is a grid instead of a guess.
   Print it (or save as PDF) with one button when you're done.
-- Click any course name for its full official description and details.
+- Click any course **name** — the grey text under the course code, in any view — for a
+  dialog with the full official description, credits (and where they came from),
+  L-T-P, meeting times, and restriction reasons.
 - **Share plan** downloads your selections as a tiny `.json`; a friend drops it onto
   their VS Course (with the same course bundle loaded) to see and tweak your
   timetable. Course data and selections travel as two small shareable files.
