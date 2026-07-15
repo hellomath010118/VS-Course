@@ -2350,8 +2350,17 @@ function busyRowLabel(row){
 /* Numeric slots toggle the WHOLE slot (ASC semantics: "busy in slot 1" = all its
    meetings). Lab cells toggle just the clicked day + band ("L:Wed:09:30") — the
    L slot spans every afternoon (and a Wed morning), so whole-slot marking used
-   to paint the entire week. Clicking also clears a matching legacy day-key. */
-function toggleExternalBusy(s,day,start){
+   to paint the entire week. Clicking also clears a matching legacy day-key.
+   Cells OCCUPIED BY A PLANNED COURSE are already busy: clicking one never adds
+   an external mark on top (that used to hatch your own lecture as a "clash");
+   it only clears a stray covering mark, or explains why nothing happened. */
+function toggleExternalBusy(s,day,start,hasCourse){
+  if(hasCourse){
+    for(const k of [s+":"+day+":"+start, s+":"+day, s])
+      if(state.busy.has(k)){state.busy.delete(k); saveBusy(); refresh(); return;}
+    setParserStatus("That time is already busy \u2014 a planned course meets there. Unpin it from My Plan to free the slot.","ready");
+    return;
+  }
   if(s==="L"&&day){
     for(const k of [s+":"+day+":"+start, s+":"+day])
       if(state.busy.has(k)){state.busy.delete(k); saveBusy(); refresh(); return;}
@@ -2400,9 +2409,11 @@ function renderBusyTable(){
       const c=busyCellState(row,d);
       if(c.state==="none"){ h+=`<td class="bt none"></td>`; continue; }
       const who=c.codes.length? c.codes.join(", ") : (c.ext? "external commitment":"free");
-      const tip=`${d} \u00b7 ${esc(row.label)}${c.slot?` (slot ${c.slot})`:""} \u2014 ${esc(who)}${c.state==="clash"?" \u2014 CLASH":""} \u00b7 click to toggle external`;
+      const hint=c.codes.length ? (c.ext?"click to clear the external mark":"already busy (planned course)")
+                                : "click to toggle external";
+      const tip=`${d} \u00b7 ${esc(row.label)}${c.slot?` (slot ${c.slot})`:""} \u2014 ${esc(who)}${c.state==="clash"?" \u2014 CLASH":""} \u00b7 ${hint}`;
       const txt=c.codes.length ? esc(c.codes[0])+(c.codes.length>1?` +${c.codes.length-1}`:"") : (c.ext?"ext":"");
-      h+=`<td class="bt ${c.state}${c.ext?' ext':''}" title="${tip}" onclick="toggleExternalBusy('${esc(c.slot)}','${d}','${c.start}')">${txt}</td>`;
+      h+=`<td class="bt ${c.state}${c.ext?' ext':''}" title="${tip}" onclick="toggleExternalBusy('${esc(c.slot)}','${d}','${c.start}',${c.codes.length?1:0})">${txt}</td>`;
     }
     h+=`</tr>`;
   }

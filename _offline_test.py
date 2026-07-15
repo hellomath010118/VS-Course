@@ -295,6 +295,29 @@ def run():
             })()""")
             print(f"== lab busy per-day: {lab} (expect labRows=2, extCells=1 not 5)")
 
+            # --- clicking a cell OCCUPIED by a planned course must not stack an
+            #     external mark on it (used to hatch your own lecture as a CLASH);
+            #     with a covering mark present, the click clears the mark instead ---
+            own = page.evaluate("""(()=>{
+              const prev=[...state.busy]; state.busy.clear();
+              if(!plan['CS 213']) togglePlan('CS 213');
+              refresh();
+              const cell=()=>[...document.querySelectorAll('#busyTable td.bt')]
+                .find(td=>td.textContent.trim().startsWith('CS 213'));
+              cell().click();                              // occupied -> no ext mark
+              const noMark=state.busy.size===0, stAfter=cell().className;
+              state.busy.add('1'); refresh();              // covering whole-slot mark
+              const stCovered=cell().className;
+              cell().click();                              // click CLEARS the mark
+              const cleared=!state.busy.has('1'), stFinal=cell().className;
+              togglePlan('CS 213');
+              state.busy=new Set(prev); saveBusy(); refresh();
+              return {noMark, notClashAfter:!/clash/.test(stAfter),
+                      coveredClash:/clash/.test(stCovered)&&/ext/.test(stCovered),
+                      cleared, finalBusyOnly:/busy/.test(stFinal)&&!/clash/.test(stFinal)};
+            })()""")
+            print(f"== own-course cell click: {own}")
+
             # --- "Hide unplanned": views show ONLY My Plan's sections; deselecting
             #     while active must remove the card itself (fast path bypassed) ---
             only = page.evaluate("""(()=>{
@@ -363,7 +386,7 @@ def run():
             info = {"ma105_rows": ma105_rows, "unsched": unsched, "plan1": plan1,
                     "cred_after": cred_after, "plan2": plan2, "creds": creds, "react": react,
                     "chips": chips, "restrict": restrict, "busy": busy, "lab": lab,
-                    "only": only, "mark": mark, "md": md, "core": core}
+                    "own": own, "only": only, "mark": mark, "md": md, "core": core}
 
         # rich state for the screenshot: a clashing plan (MA 105 D1 vs MA 419) +
         # a couple of external commitments, so the busy TABLE shows red + clash cells
@@ -493,6 +516,11 @@ def run():
         lb = info.get("lab", {})
         lab_ok = (lb.get("labRows") == 2 and lb.get("extCells") == 1
                   and lb.get("key") == "L:Mon:14:00" and lb.get("extLegacy") == 2)
+        # clicking your own planned course's cell: no ext mark stacked (no fake
+        # clash); if a covering mark exists the click clears it back to plain busy
+        ow = info.get("own", {})
+        own_ok = (ow.get("noMark") and ow.get("notClashAfter") and ow.get("coveredClash")
+                  and ow.get("cleared") and ow.get("finalBusyOnly"))
         # "Hide unplanned": 2 planned sections -> 2 rows; deselect drops to 1;
         # untoggling restores the full list
         o = info.get("only", {})
@@ -559,12 +587,12 @@ def run():
                 and info.get("plan1", {}).get("hours", 0) > 0
                 and info.get("cred_after", 0) >= 99
                 and info.get("plan2", {}).get("clash") == 0
-                and credits_ok and react_ok and chips_ok and lab_ok and only_ok and mark_ok
-                and md_ok and lazy_ok and restrict_ok and busy_ok and core_ok and share_ok
-                and bundle_ok)
+                and credits_ok and react_ok and chips_ok and lab_ok and own_ok and only_ok
+                and mark_ok and md_ok and lazy_ok and restrict_ok and busy_ok and core_ok
+                and share_ok and bundle_ok)
         print(f"\n   credits_ok={credits_ok}  react_ok={react_ok}  chips_ok={chips_ok}"
-              f"  lab_ok={lab_ok}  only_ok={only_ok}  mark_ok={mark_ok}  md_ok={md_ok}"
-              f"  lazy_ok={lazy_ok}  restrict_ok={restrict_ok}  busy_ok={busy_ok}"
+              f"  lab_ok={lab_ok}  own_ok={own_ok}  only_ok={only_ok}  mark_ok={mark_ok}"
+              f"  md_ok={md_ok}  lazy_ok={lazy_ok}  restrict_ok={restrict_ok}  busy_ok={busy_ok}"
               f"  core_ok={core_ok}  share_ok={share_ok}  bundle_ok={bundle_ok}")
         print("==== RESULT:", "PASS" if good else "FAIL", "====")
         return 0 if good else 1
