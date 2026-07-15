@@ -322,6 +322,7 @@
     <div class="row"><span class="lbl">Busy slots</span><span id="slots" class="row"></span></div>
     <div class="row">
       <span class="lbl">Options</span>
+      <label class="toggle" title="Show only the sections in My Plan — declutter the views once your selection takes shape"><input type="checkbox" id="onlyPlan">Hide unplanned</label>
       <label class="toggle"><input type="checkbox" id="hideBusy">Hide busy-slot</label>
       <label class="toggle"><input type="checkbox" id="hideInelig">Hide ineligible</label>
       <label class="toggle"><input type="checkbox" id="hideOtherAdv">Hide other-dept advanced</label>
@@ -1894,6 +1895,7 @@ const state = {
   depts:new Set(), levels:new Set(), types:new Set(), // shown-sets (filled by applyDataset)
   busy:new Set(load(LS.busy, [])),  // external fixed commitments (persisted); also drives "hide busy-slot"
   hideBusy:false, hideInelig:false, hideOtherAdv:false, hideCore:false, distinct:true,
+  onlyPlan:false,   // "Hide unplanned": show just My Plan's sections in every view
 };
 function saveBusy(){save(LS.busy,[...state.busy]);}   // persist external commitments on every change
 
@@ -1970,6 +1972,7 @@ function busyHit(slot,day,start){
 }
 function unitBusy(u){return (u.meetings||[]).some(m=>busyHit(mslot(m),m.day,m.start));}
 function passes(u){
+  if(state.onlyPlan && !inPlan(u)) return false;
   if(hidden[u.code]!==undefined) return false;
   if(!state.depts.has(u.dept)) return false;
   if(!state.levels.has(u._lvl)) return false;
@@ -2208,7 +2211,9 @@ function togglePlan(key){
     }
   } else plan[key]=true;
   save(LS.plan,plan);
-  if(coreCleared) refresh();   // core badges may sit anywhere -> full pass
+  // full pass when membership changes what's VISIBLE (core badges may sit
+  // anywhere; "Hide unplanned" must drop/add the card itself)
+  if(coreCleared || state.onlyPlan) refresh();
   else refreshPlan();          // otherwise: patch classes in place (a full
                                // re-render of ~1200 cards made every click laggy)
 }
@@ -2740,6 +2745,7 @@ async function handleAdd(fileArr){
 
 /* ---------- wire controls (once) ---------- */
 document.getElementById("q").oninput=e=>{state.q=e.target.value.trim();refresh();};
+document.getElementById("onlyPlan").onchange=e=>{state.onlyPlan=e.target.checked;refresh();};
 document.getElementById("hideBusy").onchange=e=>{state.hideBusy=e.target.checked;refresh();};
 document.getElementById("hideInelig").onchange=e=>{state.hideInelig=e.target.checked;refresh();};
 document.getElementById("hideOtherAdv").onchange=e=>{state.hideOtherAdv=e.target.checked;refresh();};
@@ -2758,7 +2764,9 @@ document.getElementById("tabs").onclick=e=>{
 document.getElementById("reset").onclick=()=>{
   state.q="";document.getElementById("q").value="";
   state.depts=new Set(DEPTS);state.levels=new Set(LEVELS);state.types=new Set(TYPES);
-  state.busy.clear();saveBusy();state.hideBusy=state.hideInelig=state.hideOtherAdv=state.hideCore=false;
+  state.busy.clear();saveBusy();
+  state.onlyPlan=state.hideBusy=state.hideInelig=state.hideOtherAdv=state.hideCore=false;
+  document.getElementById("onlyPlan").checked=false;
   document.getElementById("hideBusy").checked=false;
   document.getElementById("hideInelig").checked=false;
   document.getElementById("hideOtherAdv").checked=false;

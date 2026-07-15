@@ -64,6 +64,36 @@ MATH = os.environ.get("VSC_FIXTURE_MATH",
                       "/home/bhavya/Downloads/Welcome to ASC ! (11_7_2026 12：54：48 pm).html")
 BROWSER = os.environ.get("VSC_BROWSER", "/usr/bin/brave-browser")
 
+
+def _fixtures_from_bundle():
+    """SingleFile dumps cleaned up? Derive equivalent per-dept .html fixtures from
+    any grab.js bundle — its pages ARE the same RunningCourses.jsp HTML the
+    SingleFile frames contained, so every assertion stays valid. Uses
+    $VSC_FIXTURE_BUNDLE or the newest ~/Downloads/asc-courses-*.json."""
+    import glob, tempfile
+    path = os.environ.get("VSC_FIXTURE_BUNDLE") or next(iter(sorted(
+        glob.glob(os.path.expanduser("~/Downloads/asc-courses-*.json")),
+        key=os.path.getmtime, reverse=True)), None)
+    if not path:
+        return None
+    bundle = json.load(open(path, encoding="utf-8"))
+    out = []
+    for dept, stem in (("CS,CSS", "cs"), ("MA,SI,MAS", "math")):
+        page = next((p for p in bundle.get("pages", []) if p.get("dept") == dept), None)
+        if not page:
+            return None
+        f = pathlib.Path(tempfile.gettempdir()) / f"vsc_fixture_{stem}.html"
+        f.write_text(page["html"], encoding="utf-8")
+        out.append(str(f))
+    print(f"== fixtures derived from bundle: {path}")
+    return out
+
+
+if not (os.path.exists(CS) and os.path.exists(MATH)):
+    derived = _fixtures_from_bundle()
+    if derived:
+        CS, MATH = derived
+
 console_logs, blocked = [], []
 
 
@@ -265,6 +295,24 @@ def run():
             })()""")
             print(f"== lab busy per-day: {lab} (expect labRows=2, extCells=1 not 5)")
 
+            # --- "Hide unplanned": views show ONLY My Plan's sections; deselecting
+            #     while active must remove the card itself (fast path bypassed) ---
+            only = page.evaluate("""(()=>{
+              state.view='list'; refresh();
+              const rows=()=>document.querySelectorAll('#view-list tbody tr').length;
+              const before=rows();
+              ['CS 213','MA 419'].forEach(k=>{ if(!plan[k]) togglePlan(k); });
+              document.getElementById('onlyPlan').checked=true;
+              state.onlyPlan=true; refresh();
+              const on=rows();
+              togglePlan('MA 419');                       // deselect while filter is ON
+              const afterRemove=rows();
+              state.onlyPlan=false; document.getElementById('onlyPlan').checked=false;
+              togglePlan('CS 213'); refresh();            // cleanup
+              return {before, on, afterRemove, after:rows()};
+            })()""")
+            print(f"== hide-unplanned filter: {only}")
+
             # --- Feature 3: suggest -> confirm core -> pinned, counts, persists ---
             page.evaluate("profile.dept='CS'; profile.prog=''; profile.year='3';"
                           "profile.batch=batchFromYear(3); coreSuggestOpen=true; refresh();")
@@ -282,7 +330,8 @@ def run():
 
             info = {"ma105_rows": ma105_rows, "unsched": unsched, "plan1": plan1,
                     "cred_after": cred_after, "plan2": plan2, "creds": creds, "react": react,
-                    "chips": chips, "restrict": restrict, "busy": busy, "lab": lab, "core": core}
+                    "chips": chips, "restrict": restrict, "busy": busy, "lab": lab,
+                    "only": only, "core": core}
 
         # rich state for the screenshot: a clashing plan (MA 105 D1 vs MA 419) +
         # a couple of external commitments, so the busy TABLE shows red + clash cells
@@ -412,6 +461,11 @@ def run():
         lb = info.get("lab", {})
         lab_ok = (lb.get("labRows") == 2 and lb.get("extCells") == 1
                   and lb.get("key") == "L:Mon:14:00" and lb.get("extLegacy") == 2)
+        # "Hide unplanned": 2 planned sections -> 2 rows; deselect drops to 1;
+        # untoggling restores the full list
+        o = info.get("only", {})
+        only_ok = (o.get("on") == 2 and o.get("afterRemove") == 1
+                   and o.get("after") == o.get("before") and o.get("before", 0) > 2)
         lazy_ok = (lazy.get("noBoot") is True and lazy.get("cachedMsg") is True
                    and lazy.get("descKept") is True
                    # a shared asc-plan .json applies WITHOUT booting Pyodide
@@ -458,10 +512,10 @@ def run():
                 and info.get("plan1", {}).get("hours", 0) > 0
                 and info.get("cred_after", 0) >= 99
                 and info.get("plan2", {}).get("clash") == 0
-                and credits_ok and react_ok and chips_ok and lab_ok and lazy_ok
+                and credits_ok and react_ok and chips_ok and lab_ok and only_ok and lazy_ok
                 and restrict_ok and busy_ok and core_ok and share_ok and bundle_ok)
         print(f"\n   credits_ok={credits_ok}  react_ok={react_ok}  chips_ok={chips_ok}"
-              f"  lab_ok={lab_ok}  lazy_ok={lazy_ok}  restrict_ok={restrict_ok}"
+              f"  lab_ok={lab_ok}  only_ok={only_ok}  lazy_ok={lazy_ok}  restrict_ok={restrict_ok}"
               f"  busy_ok={busy_ok}  core_ok={core_ok}  share_ok={share_ok}  bundle_ok={bundle_ok}")
         print("==== RESULT:", "PASS" if good else "FAIL", "====")
         return 0 if good else 1

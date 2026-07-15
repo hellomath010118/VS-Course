@@ -9,7 +9,8 @@ ASC (Academic Support Console), the portal you love to hate every registration s
 You feed it your own saved ASC course pages and it turns that 2003-era frameset HTML
 into something you can actually plan with:
 
-- Filter courses by time-slot, department, level, and eligibility.
+- Filter courses by time-slot, department, level, and eligibility — or flip
+  **Hide unplanned** to see only the sections you've picked.
 - Plan electives with official ASC credits (via `grab.js`) or automatic credit
   estimation from each course's L-T-P (lecture / tutorial / practical) hours —
   estimates are marked with a `~` so you know which is which.
