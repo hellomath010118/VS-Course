@@ -166,6 +166,8 @@
   .unit-chip.pclash{background:var(--busy-soft);border-color:var(--busy)}
   .pill.pclash{background:var(--busy-soft);border-color:var(--busy);color:var(--busy)}
   #view-list tr.pclash td{background:var(--busy-soft)}
+  .mdout{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre;
+    overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px}
   .pill.planned{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
   .div-badge{font-size:10.5px;background:#eef2ff;color:#4338ca;border-radius:6px;padding:0 6px;font-weight:600}
   .cr{font-size:11px;color:var(--ok);font-weight:600;white-space:nowrap}
@@ -349,6 +351,8 @@
       <span class="spacer"></span>
       <button class="btn" onclick="sharePlan()"
         title="Download your selections (sections + credit overrides + cores) as a tiny .json — a friend drops it onto their VS Course (same course bundle loaded) to see your timetable">Share plan</button>
+      <button class="btn" onclick="copyPlanMarkdown()"
+        title="Your week as a plain markdown table (course codes only) — copied to the clipboard, paste it anywhere">Copy Markdown</button>
       <button class="btn" onclick="window.print()"
         title="Print just this panel (plan + busy table) — pick 'Save as PDF' in the dialog">Print / PDF</button>
       <button class="btn" id="clearPlan">Clear plan</button>
@@ -2362,6 +2366,37 @@ function toggleExternalBusy(s,day,start){
     state.busy.add(start ? s+":"+day+":"+start : s+":"+day);
   } else state.busy.has(s)?state.busy.delete(s):state.busy.add(s);
   saveBusy(); refresh();
+}
+/* "Copy Markdown": the SAME weekly table, as plain text for pasting anywhere.
+   Cells carry course codes only (everyone knows their codes by heart), "ext"
+   for external commitments, and a trailing !! on clashes. Empty rows drop out. */
+function planMarkdownText(){
+  const days=busyDays(), rows=busyRows(), lines=[];
+  lines.push(`| | ${days.join(" | ")} |`);
+  lines.push(`|---|${days.map(()=>"---|").join("")}`);
+  for(const row of rows){
+    const cells=days.map(d=>{
+      const c=busyCellState(row,d);
+      if(c.state!=="busy"&&c.state!=="clash") return "";
+      const t=[...c.codes, ...(c.ext?["ext"]:[])].join(", ");
+      return c.state==="clash" ? t+" !!" : t;
+    });
+    if(cells.some(Boolean)) lines.push(`| ${busyRowLabel(row)} | ${cells.join(" | ")} |`);
+  }
+  let md=lines.length>2 ? lines.join("\n") : "(nothing scheduled)";
+  const uns=[...new Set(UNITS.filter(u=>inPlan(u)&&!(u.meetings||[]).length).map(u=>u.code))];
+  if(uns.length) md+=`\n\nNo fixed slot: ${uns.join(", ")}`;
+  return md;
+}
+async function copyPlanMarkdown(){
+  if(!UNITS.some(inPlan)){setParserStatus("Nothing planned yet \u2014 add sections first, then export.","error");return;}
+  const md=planMarkdownText();
+  let copied=false;
+  try{await navigator.clipboard.writeText(md); copied=true;}catch(e){/* http:// or denied -> copy by hand */}
+  document.getElementById("infoBody").innerHTML=
+    `<h3>Markdown timetable ${copied?'<span class="muted" style="font-weight:400">\u2014 copied to clipboard</span>':""}</h3>
+     <pre class="mdout">${esc(md)}</pre>`;
+  document.getElementById("infoBox").showModal();
 }
 function renderBusyTable(){
   const el=document.getElementById("busyTable"); if(!el) return;

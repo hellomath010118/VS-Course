@@ -19,7 +19,9 @@ into something you can actually plan with:
   (**Mark plan-clashing**, on by default) — no need to fake "busy" marks over your
   own lectures to see what still fits.
 - A weekly "When I'm busy" table, so your timetable is a grid instead of a guess.
-  Print it (or save as PDF) with one button when you're done.
+  Print it (or save as PDF) with one button when you're done — or **Copy Markdown**
+  for the same week as a plain text table (course codes only) you can paste into
+  any chat or notes app.
 - Click any course **name** — the grey text under the course code, in any view — for a
   dialog with the full official description, credits (and where they came from),
   L-T-P, meeting times, and restriction reasons.
