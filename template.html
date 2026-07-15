@@ -921,6 +921,7 @@ function refreshPlan(){
       p.title=planned?"Remove from plan":"Add section to plan";}
   }
   renderPlan(); renderCores();   // small panels (plan list, busy table, core chips)
+  slotChips(document.getElementById("slots"));   // taken-slot chips follow the plan
 }
 function clearPlan(){
   if(Object.keys(plan).length && !confirm("Remove everything from My Plan? (also clears pinned cores)")) return;
@@ -1112,7 +1113,10 @@ function renderBusyTable(){
    Unrestricted courses are electives under this rule. (The previous guess —
    own-dept Nxx theory, unrestricted — listed half the catalogue.) Set your
    programme in the profile to also drop other-programme reserved rows. Edit
-   this ONE rule; pasting exact core codes overrides it. */
+   this ONE rule; pasting exact core codes overrides it.
+   COVERAGE CAVEAT: only depts that batch-reserve rows (CS-style) get
+   suggestions. EE/MA/ME/PH publish no batch rules at all — no data, no guess;
+   renderCores() explains that instead of suggesting garbage. */
 function isLikelyCore(u){
   if(!profile.dept || !profile.batch) return false;
   const full=DEPT_FULL[profile.dept]||"";
@@ -1162,9 +1166,20 @@ function renderCores(){
     : `<span class="hint">No core courses confirmed yet. Suggest or paste your program's core codes \u2014 they get pinned in the plan.</span>`;
   if(coreSuggestOpen){
     const cand=suggestCores();
+    // no candidates: say WHY. Most depts (EE, MA, ME, PH...) publish NO
+    // batch-reserved rows on ASC at all — then there is no core signal in the
+    // data, and pasting the codes is the only correct path (not a worse guess).
+    let why="";
+    if(!cand.length){
+      const hasRules=UNITS.some(u=>u.dept===profile.dept &&
+        (u.restrictions||[]).some(r=>r.allowed && /^\d{4}$/.test(String(r.batch))));
+      why = (!profile.dept||!profile.batch) ? "set your dept + year of study above"
+        : !hasRules ? `${esc(profile.dept)} publishes no batch-reserved rows on ASC \u2014 the data has no core signal for it`
+        : `nothing is reserved for batch ${esc(profile.batch)} in the loaded courses`;
+    }
     sug.innerHTML=`<span class="hint">Reserved for ${esc(profileStr())} by ASC restrictions \u2014 likely core, confirm to pin:</span> `+(cand.length
       ? cand.map(c=>`<span class="chip sug-chip" title="Confirm + pin as core" onclick="pinCore('${esc(c)}')">\uFF0B ${esc(c)}</span>`).join("")
-      : `<span class="muted">nothing is batch-reserved for your profile \u2014 set dept/year above, or paste your core codes below</span>`);
+      : `<span class="muted">no suggestions: ${why}. Paste your core codes below \u2014 they pin all the same.</span>`);
   }else sug.innerHTML="";
 }
 
@@ -1185,13 +1200,26 @@ function toggleChips(el,items,shownSet,counts){
     el.appendChild(b);
   });
 }
+/* A slot is busy for two reasons: you MARKED it (external commitment, lives in
+   state.busy) or a planned course MEETS in it (automatic — taking a course
+   occupies its slot, no marking needed). Taken chips light up on their own and
+   refuse a redundant external mark (stacking one used to hatch your own course
+   as a fake clash); clicking them only clears a covering mark, if any. */
+function slotTaken(s){
+  return UNITS.some(u=>inPlan(u)&&(u.meetings||[]).some(m=>mslot(m)===s));
+}
 function slotChips(el){
   el.innerHTML="";
   SLOT_ORDER.forEach(s=>{
+    const marked=state.busy.has(s), taken=slotTaken(s);
     const b=document.createElement("span");
-    b.className="chip slot"+(state.busy.has(s)?" on":"");
+    b.className="chip slot"+(marked||taken?" on":"")+(taken?" taken":"");
     b.textContent=s;
-    b.onclick=()=>{state.busy.has(s)?state.busy.delete(s):state.busy.add(s);saveBusy();refresh();};
+    b.title = taken ? "Busy automatically \u2014 a planned course meets in this slot"
+                      +(marked?" (also marked externally \u2014 click to clear that mark)":"")
+            : marked ? "Marked busy (external commitment) \u2014 click to clear"
+            : "Mark this whole slot as an external commitment";
+    b.onclick=()=>toggleExternalBusy(s,null,null,taken?1:0);
     el.appendChild(b);
   });
 }

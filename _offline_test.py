@@ -310,13 +310,24 @@ def run():
               const stCovered=cell().className;
               cell().click();                              // click CLEARS the mark
               const cleared=!state.busy.has('1'), stFinal=cell().className;
-              togglePlan('CS 213');
+              // the slot CHIP row: slot 1 lights up automatically (course taken),
+              // refuses a redundant mark, but still clears a covering one
+              const chip=()=>[...document.querySelectorAll('#slots .chip.slot')].find(c=>c.textContent==='1');
+              const chipTaken=chip().classList.contains('taken')&&chip().classList.contains('on');
+              chip().click();
+              const chipNoMark=state.busy.size===0;
+              state.busy.add('1'); refresh();
+              chip().click();
+              const chipCleared=!state.busy.has('1');
+              togglePlan('CS 213');                        // fast path must un-take the chip
+              const chipFree=![...document.querySelectorAll('#slots .chip.slot')].some(c=>c.classList.contains('taken'));
               state.busy=new Set(prev); saveBusy(); refresh();
               return {noMark, notClashAfter:!/clash/.test(stAfter),
                       coveredClash:/clash/.test(stCovered)&&/ext/.test(stCovered),
-                      cleared, finalBusyOnly:/busy/.test(stFinal)&&!/clash/.test(stFinal)};
+                      cleared, finalBusyOnly:/busy/.test(stFinal)&&!/clash/.test(stFinal),
+                      chipTaken, chipNoMark, chipCleared, chipFree};
             })()""")
-            print(f"== own-course cell click: {own}")
+            print(f"== own-course cell + chip clicks: {own}")
 
             # --- "Hide unplanned": views show ONLY My Plan's sections; deselecting
             #     while active must remove the card itself (fast path bypassed) ---
@@ -377,9 +388,16 @@ def run():
               else { via='paste'; const code=(UNITS.find(u=>u.dept==='CS')||UNITS[0]||{}).code;
                      if(code){ document.getElementById('coreInput').value=code; applyCoreText(); } }
               const c=[...cores][0], u=c?firstUnitOf(c):null;
+              // a dept with NO batch-reserved rows (MA here) must explain itself
+              // instead of guessing: switch profile, read the hint, switch back
+              const saved={...profile};
+              profile.dept='MA'; refresh();
+              const noSig=document.getElementById('coreSuggest').textContent;
+              Object.assign(profile,saved); refresh();
               return {via, candN:cand.length, code:c, pinned:!!(u&&isCorePinned(u)), inPlan:!!(u&&inPlan(u)),
                       planN:UNITS.filter(inPlan).length, badge:!!document.querySelector('.core-badge, .core-chip'),
-                      persisted: JSON.parse(localStorage.getItem('asc_cores')||'[]').length};
+                      persisted: JSON.parse(localStorage.getItem('asc_cores')||'[]').length,
+                      noSignalMsg:/no batch-reserved rows/.test(noSig)};
             })()""")
             print(f"== core suggest/pin: {core}")
 
@@ -520,7 +538,9 @@ def run():
         # clash); if a covering mark exists the click clears it back to plain busy
         ow = info.get("own", {})
         own_ok = (ow.get("noMark") and ow.get("notClashAfter") and ow.get("coveredClash")
-                  and ow.get("cleared") and ow.get("finalBusyOnly"))
+                  and ow.get("cleared") and ow.get("finalBusyOnly")
+                  and ow.get("chipTaken") and ow.get("chipNoMark")
+                  and ow.get("chipCleared") and ow.get("chipFree"))
         # "Hide unplanned": 2 planned sections -> 2 rows; deselect drops to 1;
         # untoggling restores the full list
         o = info.get("only", {})
@@ -564,6 +584,7 @@ def run():
         # Feature 3: a core got confirmed -> pinned in plan + persisted + badge shown
         co = info.get("core", {})
         core_ok = (bool(co.get("code")) and co.get("pinned") and co.get("inPlan")
+                   and co.get("noSignalMsg")
                    and co.get("badge") and co.get("persisted", 0) > 0)
         # Feature 4: share build references CDN + flips FORCE_CDN; offline stays local
         share_ok = all(share.values())

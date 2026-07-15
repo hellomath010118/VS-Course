@@ -11,6 +11,10 @@ into something you can actually plan with:
 
 - Filter courses by time-slot, department, level, and eligibility — or flip
   **Hide unplanned** to see only the sections you've picked.
+- Core-course suggestions, read off the ASC restriction rows ("open to batch 2024
+  CSE only" = reserved for that batch = likely core). Works only for departments
+  that publish such rows (CS does; EE/MA/ME/PH don't) — everyone else pastes their
+  core codes once and gets the same pinning.
 - Plan electives with official ASC credits (via `grab.js`) or automatic credit
   estimation from each course's L-T-P (lecture / tutorial / practical) hours —
   estimates are marked with a `~` so you know which is which.
@@ -19,7 +23,8 @@ into something you can actually plan with:
   plan drops out of the lists — what's left is what still fits, no faking "busy"
   marks over your own lectures.
 - A weekly "When I'm busy" table, so your timetable is a grid instead of a guess.
-  Print it (or save as PDF) with one button when you're done — or **Copy Markdown**
+  Slots your planned courses meet in are busy automatically; external commitments
+  you mark yourself. Print it (or save as PDF) with one button — or **Copy Markdown**
   for the same week as a plain text table (course codes only) you can paste into
   any chat or notes app.
 - Click any course **name** — the grey text under the course code, in any view — for a
