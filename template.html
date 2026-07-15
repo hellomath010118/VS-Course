@@ -338,6 +338,8 @@
       <span class="lbl">My plan</span>
       <span class="planhint">Click the <b>＋</b> on any course to add its section. Divisions plan independently.</span>
       <span class="spacer"></span>
+      <button class="btn" onclick="sharePlan()"
+        title="Download your selections (sections + credit overrides + cores) as a tiny .json — a friend drops it onto their VS Course (same course bundle loaded) to see your timetable">Share plan</button>
       <button class="btn" onclick="window.print()"
         title="Print just this panel (plan + busy table) — pick 'Save as PDF' in the dialog">Print / PDF</button>
       <button class="btn" id="clearPlan">Clear plan</button>
@@ -636,12 +638,17 @@ function unitsClash(a,b){
 }
 
 /* ---------- filtering (operates on UNITS) ---------- */
-/* External commitments live in state.busy as either a plain slot ("1", "L" =
-   every meeting of that slot) or a day-scoped lab key ("L:Wed" = labs that day
-   only — the L band spans all five afternoons, so whole-slot marking there
-   would paint the entire week). */
-function busyHit(slot,day){return state.busy.has(slot) || (day && state.busy.has(slot+":"+day));}
-function unitBusy(u){return (u.meetings||[]).some(m=>busyHit(mslot(m),m.day));}
+/* External commitments live in state.busy as a plain slot ("1", "L" = every
+   meeting of that slot) or a lab key scoped to a day + band start
+   ("L:Wed:09:30") — the L slot spans five afternoons plus a Wed morning band,
+   so whole-slot marking there would paint the entire week. Legacy "L:Wed"
+   day-keys (pre band-scoping) still match every lab band that day. */
+function busyHit(slot,day,start){
+  return state.busy.has(slot)
+    || (day && state.busy.has(slot+":"+day))
+    || (day && start && state.busy.has(slot+":"+day+":"+start));
+}
+function unitBusy(u){return (u.meetings||[]).some(m=>busyHit(mslot(m),m.day,m.start));}
 function passes(u){
   if(hidden[u.code]!==undefined) return false;
   if(!state.depts.has(u.dept)) return false;
@@ -982,18 +989,23 @@ function busyRows(){
 function busyCellState(row, day){
   const slot = row.tutorial ? "X" : row.cells[day];
   if(slot===undefined) return {state:"none"};        // no period here -> white
+  // lab rows exist per TIME BAND (Wed has a morning one too), so a planned lab
+  // meeting must also overlap the row's band — slot-key matching alone would
+  // light every lab band of that day
+  const band = (slot==="L") ? row.label.split("\u2013") : null;   // ["09:30","12:30"]
   const codes=[]; let clashHit=false;
   for(const u of UNITS){
     if(!inPlan(u)) continue;
-    if((u.meetings||[]).some(m=>m.day===day && mslot(m)===slot)){
+    if((u.meetings||[]).some(m=>m.day===day && mslot(m)===slot &&
+        (!band || (toMin(m.start)<toMin(band[1]) && toMin(band[0])<toMin(m.end))))){
       codes.push(u.code); if(clashKeys.has(u.key)) clashHit=true;
     }
   }
-  const uniqCodes=[...new Set(codes)], ext=busyHit(slot,day);
+  const uniqCodes=[...new Set(codes)], ext=busyHit(slot,day,band&&band[0]);
   let st="free";
   if(uniqCodes.length>=2 || clashHit || (uniqCodes.length && ext)) st="clash";
   else if(uniqCodes.length || ext) st="busy";
-  return {state:st, slot, codes:uniqCodes, ext};
+  return {state:st, slot, codes:uniqCodes, ext, start:band?band[0]:""};
 }
 function busyRowLabel(row){
   if(row.tutorial) return "Tutorial (X)";
@@ -1001,11 +1013,15 @@ function busyRowLabel(row){
   return (slots.size===1 && slots.has("L")) ? row.label+" \u00b7 Lab" : row.label;
 }
 /* Numeric slots toggle the WHOLE slot (ASC semantics: "busy in slot 1" = all its
-   meetings). The lab band "L" spans every afternoon, so its cells toggle just
-   the clicked DAY ("L:Wed") — this used to paint all five days at once. */
-function toggleExternalBusy(s,day){
-  const key=(s==="L"&&day)?s+":"+day:s;
-  state.busy.has(key)?state.busy.delete(key):state.busy.add(key);
+   meetings). Lab cells toggle just the clicked day + band ("L:Wed:09:30") — the
+   L slot spans every afternoon (and a Wed morning), so whole-slot marking used
+   to paint the entire week. Clicking also clears a matching legacy day-key. */
+function toggleExternalBusy(s,day,start){
+  if(s==="L"&&day){
+    for(const k of [s+":"+day+":"+start, s+":"+day])
+      if(state.busy.has(k)){state.busy.delete(k); saveBusy(); refresh(); return;}
+    state.busy.add(start ? s+":"+day+":"+start : s+":"+day);
+  } else state.busy.has(s)?state.busy.delete(s):state.busy.add(s);
   saveBusy(); refresh();
 }
 function renderBusyTable(){
@@ -1020,7 +1036,7 @@ function renderBusyTable(){
       const who=c.codes.length? c.codes.join(", ") : (c.ext? "external commitment":"free");
       const tip=`${d} \u00b7 ${esc(row.label)}${c.slot?` (slot ${c.slot})`:""} \u2014 ${esc(who)}${c.state==="clash"?" \u2014 CLASH":""} \u00b7 click to toggle external`;
       const txt=c.codes.length ? esc(c.codes[0])+(c.codes.length>1?` +${c.codes.length-1}`:"") : (c.ext?"ext":"");
-      h+=`<td class="bt ${c.state}${c.ext?' ext':''}" title="${tip}" onclick="toggleExternalBusy('${esc(c.slot)}','${d}')">${txt}</td>`;
+      h+=`<td class="bt ${c.state}${c.ext?' ext':''}" title="${tip}" onclick="toggleExternalBusy('${esc(c.slot)}','${d}','${c.start}')">${txt}</td>`;
     }
     h+=`</tr>`;
   }
@@ -1328,6 +1344,32 @@ _parse_files`);
   return pyBoot;
 }
 
+/* ---------- share / import selections (tiny "asc-plan" .json, pure JS) ---------- */
+/* The COURSE data comes from the (shareable) grab bundle; this shares the
+   SELECTIONS on top of it: plan keys + credit overrides + confirmed cores.
+   Import needs no Python — friends with a cached dataset never boot Pyodide. */
+function sharePlan(){
+  const data={kind:"asc-plan", version:1, saved_at:new Date().toISOString(),
+              plan:Object.keys(plan), overrides, cores:[...cores]};
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,1)],{type:"application/json"}));
+  a.download="asc-plan-"+new Date().toISOString().slice(0,10)+".json";
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function maybePlanFile(text){
+  try{const o=JSON.parse(text); return (o && o.kind==="asc-plan") ? o : null;}
+  catch(e){return null;}
+}
+function importPlan(obj){                       // wholesale replace: predictable
+  plan={}; (obj.plan||[]).forEach(k=>{plan[k]=true;});
+  overrides=obj.overrides||{};
+  cores=new Set(obj.cores||[]);
+  save(LS.plan,plan); save(LS.credits,overrides); saveCores(); refresh();
+  const n=UNITS.filter(inPlan).length, miss=Object.keys(plan).length-n;
+  setParserStatus(`Loaded shared plan: ${n} section(s)`+
+    (miss?` \u2014 ${miss} not among your loaded courses (load the same bundle first)`:""),"ready");
+}
+
 /* ---------- upload ---------- */
 function stem(name){return (name||"").replace(/\.[^.]*$/,"");}
 /* copy the embedded grab.js to the clipboard (see the .grab-help steps) */
@@ -1361,8 +1403,14 @@ async function addFiles(fileArr){
 async function handleAdd(fileArr){
   if(!fileArr.length) return;
   try{
-    setParserStatus("Parsing "+fileArr.length+" file(s)\u2026","loading");
-    await addFiles(fileArr);
+    const dataFiles=[];
+    for(const f of fileArr){  // shared-plan files apply instantly, WITHOUT Pyodide
+      const p=(/\.json$/i.test(f.name) && f.size<1e6) ? maybePlanFile(await f.text()) : null;
+      p ? importPlan(p) : dataFiles.push(f);
+    }
+    if(!dataFiles.length) return;
+    setParserStatus("Parsing "+dataFiles.length+" file(s)\u2026","loading");
+    await addFiles(dataFiles);
     setParserStatus("Parser ready \u2014 drop more ASC pages or bundles to add courses.","ready");
   }catch(err){
     if(pyParse) setParserStatus("Parse failed: "+((err&&err.message)||err),"error");

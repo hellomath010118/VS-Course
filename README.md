@@ -18,6 +18,9 @@ into something you can actually plan with:
 - A weekly "When I'm busy" table, so your timetable is a grid instead of a guess.
   Print it (or save as PDF) with one button when you're done.
 - Click any course name for its full official description and details.
+- **Share plan** downloads your selections as a tiny `.json`; a friend drops it onto
+  their VS Course (with the same course bundle loaded) to see and tweak your
+  timetable. Course data and selections travel as two small shareable files.
 
 Everything runs locally in your browser via [Pyodide](https://pyodide.org) (Python,
 compiled to WebAssembly). Your course data never leaves your machine. There is no

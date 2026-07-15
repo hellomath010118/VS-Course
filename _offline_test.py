@@ -33,6 +33,7 @@ boots, it MUST be from the local ./pyodide/ files. Then uploads BOTH ASC dumps
 
 Usage: python _offline_test.py <url> <out_png>
 """
+import json
 import os
 import pathlib
 import sys
@@ -246,20 +247,23 @@ def run():
             page.evaluate("['1','7'].forEach(s=>state.busy.delete(s)); saveBusy();"
                           "['CS 213','SI 423'].forEach(k=>{ if(plan[k]) togglePlan(k); }); refresh();")   # cleanup
 
-            # --- lab band: clicking one day's L cell marks THAT day only (used to
-            #     paint all five afternoons, since slot "L" spans the whole week) ---
+            # --- lab bands: clicking one lab cell marks THAT day+band only (used to
+            #     paint all five afternoons, since slot "L" spans the whole week);
+            #     Wed additionally has a MORNING lab band; legacy "L:Day" keys
+            #     (pre band-scoping) still light that day's lab cells ---
             lab = page.evaluate("""(()=>{
               const prev=[...state.busy]; state.busy.clear();
-              toggleExternalBusy('L','Mon');                      // what a cell click sends
-              const row=[...document.querySelectorAll('#busyTable tr')]
-                .find(r=>(r.querySelector('th.rh')||{}).textContent?.includes('Lab'));
-              const cells=row?[...row.querySelectorAll('td.bt')]:[];
-              const out={extCells:cells.filter(c=>c.classList.contains('ext')).length,
-                         key:[...state.busy].join(",")};
+              toggleExternalBusy('L','Mon','14:00');              // what a cell click sends
+              const labRows=[...document.querySelectorAll('#busyTable tr')]
+                .filter(r=>((r.querySelector('th.rh')||{}).textContent||'').includes('Lab'));
+              const ext=()=>document.querySelectorAll('#busyTable td.bt.ext').length;
+              const out={labRows:labRows.length, extCells:ext(), key:[...state.busy].join(",")};
+              state.busy.add('L:Tue'); refresh();                 // legacy day-key still works
+              out.extLegacy=ext();
               state.busy=new Set(prev); saveBusy(); refresh();    // restore
               return out;
             })()""")
-            print(f"== lab busy per-day: {lab} (expect extCells=1, not 5)")
+            print(f"== lab busy per-day: {lab} (expect labRows=2, extCells=1 not 5)")
 
             # --- Feature 3: suggest -> confirm core -> pinned, counts, persists ---
             page.evaluate("profile.dept='CS'; profile.prog=''; profile.year='3';"
@@ -295,7 +299,6 @@ def run():
         #     an official crsedetail page; official facts must attach & win ---
         bundle_info = {}
         if ok:
-            import json
             detail = ("<html><body><table>"
                       "<tr><td>Fields</td><td>Content</td></tr>"
                       "<tr><td>Course Name</td><td>Data Structures</td></tr>"
@@ -355,9 +358,22 @@ def run():
                     "({noBoot: pyBoot===null,"
                     "  cachedMsg: /cached courses/.test(document.getElementById('parserStatus').textContent),"
                     "  descKept: ((UNIT_BY_KEY['CS 213']||{}).description||'').length>0})")
+                # a friend's shared plan drops in and applies with NO Python boot
+                plan_file = {"kind": "asc-plan", "version": 1,
+                             "plan": ["CS 213", "XX 999"],   # one real, one unknown
+                             "overrides": {"CS 213": 9}, "cores": []}
+                page.evaluate("plan={}; overrides={}; cores=new Set(); refresh();")
+                page.set_input_files("#filepick", files=[{
+                    "name": "asc-plan-2026-07-15.json", "mimeType": "application/json",
+                    "buffer": json.dumps(plan_file).encode()}])
+                page.wait_for_function("Object.keys(plan).length>0", timeout=15000)
+                lazy.update(page.evaluate(
+                    "({planApplied: UNITS.filter(inPlan).length,"
+                    "  planOverride: creditOf(UNIT_BY_KEY['CS 213']),"
+                    "  stillNoBoot: pyBoot===null})"))
             except Exception as e:
                 print(f"!! cached dataset did not restore after reload: {e}")
-            print(f"== reload w/ cache (lazy boot): {lazy}")
+            print(f"== reload w/ cache (lazy boot) + shared-plan import: {lazy}")
 
         browser.close()
 
@@ -391,11 +407,16 @@ def run():
         chips_ok = (ch.get("before", {}).get("on", 0) > 0
                     and ch.get("none") == {"on": 0, "rows": 0}
                     and ch.get("all") == ch.get("before"))
-        # lab band: one day's click = ONE marked cell, stored as a day-scoped key
-        lab_ok = (info.get("lab", {}).get("extCells") == 1
-                  and info.get("lab", {}).get("key") == "L:Mon")
+        # lab bands: one click = ONE marked cell (day+band key); Wed morning row
+        # exists; legacy "L:Day" keys still light that day's lab cell
+        lb = info.get("lab", {})
+        lab_ok = (lb.get("labRows") == 2 and lb.get("extCells") == 1
+                  and lb.get("key") == "L:Mon:14:00" and lb.get("extLegacy") == 2)
         lazy_ok = (lazy.get("noBoot") is True and lazy.get("cachedMsg") is True
-                   and lazy.get("descKept") is True)
+                   and lazy.get("descKept") is True
+                   # a shared asc-plan .json applies WITHOUT booting Pyodide
+                   and lazy.get("planApplied") == 1 and lazy.get("planOverride") == 9
+                   and lazy.get("stillNoBoot") is True)
         # Feature 1: a restricted course yields a non-empty, profile-aware reason
         rr = info.get("restrict") or {}
         restrict_ok = bool(rr.get("reasons")) and "Restricted" in (rr.get("text") or "")
