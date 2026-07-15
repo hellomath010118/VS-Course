@@ -71,6 +71,8 @@
   .chip.slot{background:var(--panel);color:var(--ink)}
   .chip.slot.on{background:var(--busy);color:#fff;border-color:var(--busy)}
   .chip .n{font-size:11px;opacity:.7}
+  .chip.mini{padding:3px 9px;font-size:11px;color:var(--muted);border-style:dotted}
+  .chip.mini:hover{color:var(--accent);border-color:var(--accent)}
   .toggle{display:flex;align-items:center;gap:7px;color:var(--ink);cursor:pointer;font-size:12.5px}
   .toggle input{accent-color:var(--accent)}
   .spacer{flex:1}
@@ -2277,6 +2279,12 @@ function renderCores(){
 /* ---------- chips ---------- */
 function toggleChips(el,items,shownSet,counts){
   el.innerHTML="";
+  if(items.length>1){  // bulk select: handy when a grabbed bundle loads ~30 depts
+    const mk=(cls,txt,fn)=>{const b=document.createElement("span");
+      b.className="chip mini "+cls; b.textContent=txt; b.onclick=fn; el.appendChild(b);};
+    mk("all","all",()=>{items.forEach(i=>shownSet.add(i));refresh();});
+    mk("none","none",()=>{items.forEach(i=>shownSet.delete(i));refresh();});
+  }
   items.forEach(it=>{
     const b=document.createElement("span");
     b.className="chip tgl"+(shownSet.has(it)?"":" off");

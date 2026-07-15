@@ -181,6 +181,22 @@ def run():
             react = {"before": react_before, "after_add": react_after, "after_remove": react_cleared}
             print(f"== extras/unscheduled planned-chips reactivity: {react}")
 
+            # --- filter chips: 'none' empties the dept filter, 'all' restores it ---
+            chips = page.evaluate("""(()=>{
+              const q=s=>document.querySelectorAll(s).length,
+                    st=()=>({on:q("#depts .chip.tgl:not(.off)"),
+                             rows:q("#view-list tbody tr, #view-grid .card")});
+              state.view='list'; refresh();
+              const before=st();
+              document.querySelector("#depts .chip.mini.none").click();
+              const none=st();
+              document.querySelector("#depts .chip.mini.all").click();
+              const all=st();
+              state.view='grid'; refresh();   // leave the view as later checks expect
+              return {before, none, all};
+            })()""")
+            print(f"== dept chips all/none: {chips}")
+
             # --- Feature 1: WHY a course is restricted (reasons vs a mismatching profile) ---
             restrict = page.evaluate("""(()=>{
               const saved={...profile}; let found=null;
@@ -243,7 +259,7 @@ def run():
 
             info = {"ma105_rows": ma105_rows, "unsched": unsched, "plan1": plan1,
                     "cred_after": cred_after, "plan2": plan2, "creds": creds, "react": react,
-                    "restrict": restrict, "busy": busy, "core": core}
+                    "chips": chips, "restrict": restrict, "busy": busy, "core": core}
 
         # rich state for the screenshot: a clashing plan (MA 105 D1 vs MA 419) +
         # a couple of external commitments, so the busy TABLE shows red + clash cells
@@ -323,6 +339,10 @@ def run():
             and c.get("ltp_dom", 0) > 0)                   # L-T-P shown in the DOM
         react_ok = (r.get("after_add", 0) > r.get("before", 0)      # extras highlight on add
                     and r.get("after_remove") == r.get("before"))   # and clear on remove
+        ch = info.get("chips", {})
+        chips_ok = (ch.get("before", {}).get("on", 0) > 0
+                    and ch.get("none") == {"on": 0, "rows": 0}
+                    and ch.get("all") == ch.get("before"))
         # Feature 1: a restricted course yields a non-empty, profile-aware reason
         rr = info.get("restrict") or {}
         restrict_ok = bool(rr.get("reasons")) and "Restricted" in (rr.get("text") or "")
@@ -361,10 +381,11 @@ def run():
                 and info.get("plan1", {}).get("hours", 0) > 0
                 and info.get("cred_after", 0) >= 99
                 and info.get("plan2", {}).get("clash") == 0
-                and credits_ok and react_ok
+                and credits_ok and react_ok and chips_ok
                 and restrict_ok and busy_ok and core_ok and share_ok and bundle_ok)
-        print(f"\n   credits_ok={credits_ok}  react_ok={react_ok}  restrict_ok={restrict_ok}"
-              f"  busy_ok={busy_ok}  core_ok={core_ok}  share_ok={share_ok}  bundle_ok={bundle_ok}")
+        print(f"\n   credits_ok={credits_ok}  react_ok={react_ok}  chips_ok={chips_ok}"
+              f"  restrict_ok={restrict_ok}  busy_ok={busy_ok}  core_ok={core_ok}"
+              f"  share_ok={share_ok}  bundle_ok={bundle_ok}")
         print("==== RESULT:", "PASS" if good else "FAIL", "====")
         return 0 if good else 1
 
