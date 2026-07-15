@@ -313,23 +313,22 @@ def run():
             })()""")
             print(f"== hide-unplanned filter: {only}")
 
-            # --- "Mark plan-clashing": non-planned sections that overlap a planned
-            #     meeting wear .pclash (brown); planned ones never do; off = none ---
+            # --- "Hide plan-clashing": sections that overlap a planned meeting drop
+            #     out of the views; the planned one stays; unplanning restores all ---
             mark = page.evaluate("""(()=>{
-              state.view='grid'; refresh();
+              state.view='list'; refresh();
+              const rows=()=>document.querySelectorAll('#view-list tbody tr').length;
               if(!plan['CS 213']) togglePlan('CS 213');
-              const marked=[...document.querySelectorAll('.pclash')].map(e=>e.getAttribute('data-key'));
-              const ps=UNITS.filter(inPlan);
-              const genuine=marked.every(k=>ps.some(p=>unitsClash(UNIT_BY_KEY[k],p)));
-              const plannedMarked=marked.some(k=>plan[k]);
-              document.getElementById('markClash').checked=false; state.markClash=false; refresh();
-              const off=document.querySelectorAll('.pclash').length;
-              document.getElementById('markClash').checked=true; state.markClash=true;
-              togglePlan('CS 213'); refresh();          // empty plan -> nothing marked
-              const cleared=document.querySelectorAll('.pclash').length;
-              return {n:marked.length, genuine, plannedMarked, off, cleared};
+              const before=rows();
+              const wouldHide=[...planClashKeys].filter(k=>passes(UNIT_BY_KEY[k])).length;
+              document.getElementById('hideClash').checked=true; state.hideClash=true; refresh();
+              const on=rows(), planStays=!!document.querySelector('#view-list [data-key="CS 213"]');
+              togglePlan('CS 213');                      // plan empty -> filter hides nothing
+              const emptied=rows();
+              state.hideClash=false; document.getElementById('hideClash').checked=false; refresh();
+              return {before, wouldHide, on, planStays, emptied, after:rows()};
             })()""")
-            print(f"== mark plan-clashing: {mark}")
+            print(f"== hide plan-clashing: {mark}")
 
             # --- "Copy Markdown": the busy table as a pastable markdown table ---
             md = page.evaluate("""(async()=>{
@@ -501,9 +500,13 @@ def run():
                    and o.get("after") == o.get("before") and o.get("before", 0) > 2)
         # "Mark plan-clashing": some sections marked, all genuinely overlapping,
         # never a planned one; toggle off and an empty plan both clear the paint
+        # "Hide plan-clashing": exactly the overlapping sections vanish, the planned
+        # row stays, and both unplanning and untoggling restore the full list
         mk = info.get("mark", {})
-        mark_ok = (mk.get("n", 0) > 0 and mk.get("genuine") and not mk.get("plannedMarked")
-                   and mk.get("off") == 0 and mk.get("cleared") == 0)
+        mark_ok = (mk.get("wouldHide", 0) > 0
+                   and mk.get("on") == mk.get("before", 0) - mk.get("wouldHide", 0)
+                   and mk.get("planStays") and mk.get("emptied") == mk.get("before")
+                   and mk.get("after") == mk.get("before"))
         # markdown export: proper header, planned code present, unscheduled listed,
         # dialog shown, empty plan degrades gracefully
         d = info.get("md", {})

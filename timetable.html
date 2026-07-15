@@ -159,13 +159,6 @@
   .cc.planned{background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent);border-radius:8px;
     padding:4px 6px;margin:2px 0}
   .cc.clash{box-shadow:inset 0 0 0 2px var(--clash-red)}
-  /* "Mark plan-clashing": NON-planned sections that overlap a planned meeting wear
-     the busy-table clay — same hue, same meaning (that time is already taken) */
-  .cc.pclash{background:var(--busy-soft);box-shadow:inset 0 0 0 1px var(--busy);
-    border-radius:8px;padding:4px 6px;margin:2px 0}
-  .unit-chip.pclash{background:var(--busy-soft);border-color:var(--busy)}
-  .pill.pclash{background:var(--busy-soft);border-color:var(--busy);color:var(--busy)}
-  #view-list tr.pclash td{background:var(--busy-soft)}
   .mdout{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre;
     overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px}
   .pill.planned{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
@@ -332,7 +325,7 @@
     <div class="row">
       <span class="lbl">Options</span>
       <label class="toggle" title="Show only the sections in My Plan — declutter the views once your selection takes shape"><input type="checkbox" id="onlyPlan">Hide unplanned</label>
-      <label class="toggle" title="Paint sections that overlap a planned meeting in the busy clay — you can't add those without dropping something"><input type="checkbox" id="markClash" checked>Mark plan-clashing</label>
+      <label class="toggle" title="Hide sections that overlap a planned meeting — with your current plan you can't take them anyway (the busy table shows the occupied times)"><input type="checkbox" id="hideClash">Hide plan-clashing</label>
       <label class="toggle"><input type="checkbox" id="hideBusy">Hide busy-slot</label>
       <label class="toggle"><input type="checkbox" id="hideInelig">Hide ineligible</label>
       <label class="toggle"><input type="checkbox" id="hideOtherAdv">Hide other-dept advanced</label>
@@ -1908,7 +1901,7 @@ const state = {
   busy:new Set(load(LS.busy, [])),  // external fixed commitments (persisted); also drives "hide busy-slot"
   hideBusy:false, hideInelig:false, hideOtherAdv:false, hideCore:false, distinct:true,
   onlyPlan:false,   // "Hide unplanned": show just My Plan's sections in every view
-  markClash:true,   // paint non-planned sections that overlap a planned meeting
+  hideClash:false,  // hide non-planned sections that overlap a planned meeting
 };
 function saveBusy(){save(LS.busy,[...state.busy]);}   // persist external commitments on every change
 
@@ -1991,6 +1984,7 @@ function passes(u){
   if(!state.levels.has(u._lvl)) return false;
   if(!state.types.has(u._bucket)) return false;
   if(state.hideBusy && unitBusy(u)) return false;
+  if(state.hideClash && planClashKeys.has(u.key)) return false;  // overlaps My Plan
   if(state.hideInelig && u._elig==="restricted") return false;
   if(state.hideOtherAdv && u._otherAdv) return false;
   if(state.hideCore && isCoreFirstYear(u)) return false;
@@ -2092,7 +2086,7 @@ function renderGrid(us){
         <div class="chd"><span class="badge">${esc(c.slot)}</span><span class="time">${c.start}\u2013${c.end}</span></div>`;
       h+=sortForView(c.units).map(u=>{
         const dim=u._otherAdv||u._elig==='restricted', planned=inPlan(u), clash=planned&&clashKeys.has(u.key);
-        return `<div class="cc ${dim?'dim':''} ${planned?'planned':''} ${clash?'clash':''} ${planClash(u)?'pclash':''} ${isCorePinned(u)?'core':''}" data-key="${esc(u.key)}">
+        return `<div class="cc ${dim?'dim':''} ${planned?'planned':''} ${clash?'clash':''} ${isCorePinned(u)?'core':''}" data-key="${esc(u.key)}">
           <span class="x" title="Hide this course" onclick="hideCourse('${esc(u.code)}')">\u00d7</span>
           <div class="code">${pin(u)} ${esc(u.code)} ${divBadge(u)} ${coreBadge(u)} ${tags(u)}</div>
           <div class="nm info" title="Click for details${u.description?" + description":""}" onclick="showInfo('${esc(u.key)}')">${esc(u.name)}</div><div class="crline">${credLabel(u)}</div>${restrictNote(u)}</div>`;
@@ -2119,7 +2113,7 @@ function renderTutorials(us){
       <span class="hint" style="text-transform:none;letter-spacing:0">tutorial / extra-slot sessions shown outside the grid</span></div>
     <div class="extra-wrap">`+extra.map(({u,m})=>{
       const planned=inPlan(u), clash=planned&&clashKeys.has(u.key);
-      return `<div class="unit-chip ${planned?'planned':''} ${clash?'clash':''} ${planClash(u)?'pclash':''}" data-key="${esc(u.key)}">${pin(u)}
+      return `<div class="unit-chip ${planned?'planned':''} ${clash?'clash':''}" data-key="${esc(u.key)}">${pin(u)}
         <div class="body info" onclick="showInfo('${esc(u.key)}')" title="Click for details"><div class="code">${esc(u.code)} ${divBadge(u)} <span class="badge">${esc(mslot(m))}</span> ${credLabel(u)}</div>
         <div class="mtg">${mlabel(m)}</div></div></div>`;
     }).join("")+`</div>`;
@@ -2149,7 +2143,7 @@ function renderSlot(us){
     h+=`<tr><td class="slotcell"><span class="pill ${busy?"busy":""}">${esc(s)}</span></td>
       <td class="muted">${(info.days||[]).join(", ")}</td><td class="muted">${info.time||""}</td>
       <td>${list.length}</td><td>${list.length?list.map(u=>
-        `<span class="pill ${inPlan(u)?'planned':''} ${planClash(u)?'pclash':''}" data-key="${esc(u.key)}" title="${esc(u.instructor)}">${pin(u)} ${esc(u.code)} ${divBadge(u)} \u00b7 ${esc(u.name)} ${tags(u)}</span>`
+        `<span class="pill ${inPlan(u)?'planned':''}" data-key="${esc(u.key)}" title="${esc(u.instructor)}">${pin(u)} ${esc(u.code)} ${divBadge(u)} \u00b7 ${esc(u.name)} ${tags(u)}</span>`
       ).join(""):'<span class="empty">\u2014</span>'}</td></tr>`;
   }
   return h+`</tbody></table>`;   // unscheduled renders in the shared #view-extras block
@@ -2176,7 +2170,7 @@ function renderList(us){
   for(const u of us){
     const planned=inPlan(u), clash=planned&&clashKeys.has(u.key);
     const times=(u.meetings||[]).map(m=>`${m.day} ${m.start}`).join(", ")||"\u2014";
-    h+=`<tr class="${u._otherAdv||u._elig==='restricted'?'dim':''} ${planned?'planned':''} ${clash?'clash':''} ${planClash(u)?'pclash':''}" data-key="${esc(u.key)}">
+    h+=`<tr class="${u._otherAdv||u._elig==='restricted'?'dim':''} ${planned?'planned':''} ${clash?'clash':''}" data-key="${esc(u.key)}">
       <td>${pin(u)}</td>
       <td class="code">${esc(u.code)} ${coreBadge(u)}</td><td class="info" title="Click for details${u.description?" + description":""}" onclick="showInfo('${esc(u.key)}')">${esc(u.name)}${restrictNote(u)}</td>
       <td>${u.division?esc(u.division):'<span class="muted">\u2014</span>'}</td>
@@ -2213,7 +2207,6 @@ function renderHidden(){
 let clashKeys = new Set();                 // unit keys that clash with another planned unit
 let planClashKeys = new Set();             // NON-planned keys that overlap any planned meeting
 function inPlan(u){return !!plan[planKeyOf(u)];}
-function planClash(u){return state.markClash && planClashKeys.has(u.key);}
 function togglePlan(key){
   let coreCleared=false;
   if(plan[key]){
@@ -2227,8 +2220,8 @@ function togglePlan(key){
   } else plan[key]=true;
   save(LS.plan,plan);
   // full pass when membership changes what's VISIBLE (core badges may sit
-  // anywhere; "Hide unplanned" must drop/add the card itself)
-  if(coreCleared || state.onlyPlan) refresh();
+  // anywhere; "Hide unplanned"/"Hide plan-clashing" must drop/add cards)
+  if(coreCleared || state.onlyPlan || state.hideClash) refresh();
   else refreshPlan();          // otherwise: patch classes in place (a full
                                // re-render of ~1200 cards made every click laggy)
 }
@@ -2241,7 +2234,6 @@ function refreshPlan(){
     const key=el.getAttribute("data-key"), planned=!!plan[key];
     el.classList.toggle("planned",planned);
     el.classList.toggle("clash",planned&&clashKeys.has(key));
-    el.classList.toggle("pclash",state.markClash&&planClashKeys.has(key));
     const u=UNIT_BY_KEY[key];
     if(u) el.classList.toggle("core",planned&&isCorePinned(u));
     const p=el.querySelector(".pin");
@@ -2803,7 +2795,7 @@ async function handleAdd(fileArr){
 /* ---------- wire controls (once) ---------- */
 document.getElementById("q").oninput=e=>{state.q=e.target.value.trim();refresh();};
 document.getElementById("onlyPlan").onchange=e=>{state.onlyPlan=e.target.checked;refresh();};
-document.getElementById("markClash").onchange=e=>{state.markClash=e.target.checked;refresh();};
+document.getElementById("hideClash").onchange=e=>{state.hideClash=e.target.checked;refresh();};
 document.getElementById("hideBusy").onchange=e=>{state.hideBusy=e.target.checked;refresh();};
 document.getElementById("hideInelig").onchange=e=>{state.hideInelig=e.target.checked;refresh();};
 document.getElementById("hideOtherAdv").onchange=e=>{state.hideOtherAdv=e.target.checked;refresh();};
@@ -2823,9 +2815,8 @@ document.getElementById("reset").onclick=()=>{
   state.q="";document.getElementById("q").value="";
   state.depts=new Set(DEPTS);state.levels=new Set(LEVELS);state.types=new Set(TYPES);
   state.busy.clear();saveBusy();
-  state.onlyPlan=state.hideBusy=state.hideInelig=state.hideOtherAdv=state.hideCore=false;
-  state.markClash=true;                          // ON is the default
-  document.getElementById("markClash").checked=true;
+  state.onlyPlan=state.hideClash=state.hideBusy=state.hideInelig=state.hideOtherAdv=state.hideCore=false;
+  document.getElementById("hideClash").checked=false;
   document.getElementById("onlyPlan").checked=false;
   document.getElementById("hideBusy").checked=false;
   document.getElementById("hideInelig").checked=false;
