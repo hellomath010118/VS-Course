@@ -10,11 +10,14 @@ You feed it your own saved ASC course pages and it turns that 2003-era frameset 
 into something you can actually plan with:
 
 - Filter courses by time-slot, department, level, and eligibility.
-- Plan electives with automatic credit estimation, worked out from each course's L-T-P
-  (lecture / tutorial / practical) hours.
+- Plan electives with official ASC credits (via `grab.js`) or automatic credit
+  estimation from each course's L-T-P (lecture / tutorial / practical) hours —
+  estimates are marked with a `~` so you know which is which.
 - Clash detection, so you stop accidentally enrolling in two courses that meet at the
   same time.
 - A weekly "When I'm busy" table, so your timetable is a grid instead of a guess.
+  Print it (or save as PDF) with one button when you're done.
+- Click any course name for its full official description and details.
 
 Everything runs locally in your browser via [Pyodide](https://pyodide.org) (Python,
 compiled to WebAssembly). Your course data never leaves your machine. There is no
@@ -73,9 +76,15 @@ the script; it only follows the same links the page already shows you.
 4. Wait a minute or two while it walks all the departments, then drop the downloaded
    `.json` onto VS Course.
 
-Courses loaded this way show **official ASC credits** (the estimate formula stays for
-everything else), a `half-sem` tag where ASC flags one, and the course description on
-hover.
+Courses loaded this way show **official ASC credits** (elsewhere the estimate formula
+applies and wears a visible `~`), a `half-sem` tag where ASC flags one, and the full
+course description when you click a course name.
+
+**Be kind to ASC.** A grab makes ~1300 small requests over your own session. That is
+fine once, but the whole point of the `.json` being one shareable file is that **one
+friend grabs per semester and everyone else just gets the file**. It contains only
+public course pages — no login tokens, no cookies, nothing personal — so share away
+and let ASC's poor JSP servers rest.
 
 ### The manual way (fallback): SingleFile
 

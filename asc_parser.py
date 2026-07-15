@@ -43,6 +43,15 @@ from typing import Callable, Iterable, Iterator, Sequence
 
 from bs4 import BeautifulSoup, Tag
 
+# bs4 backend: lxml (C, ~4x faster — vendored in ./pyodide/ and loaded by the
+# webapp) when importable, else the stdlib parser. Same tree either way here:
+# ASC pages are plain <table> soup without the edge cases the backends disagree on.
+try:
+    import lxml  # noqa: F401  (probe only; bs4 does the actual importing)
+    SOUP_PARSER = "lxml"
+except ImportError:            # pragma: no cover - depends on environment
+    SOUP_PARSER = "html.parser"
+
 # ----------------------------------------------------------------------------- 
 # Script location (CWD-independent)
 # -----------------------------------------------------------------------------
@@ -325,7 +334,7 @@ class SingleFileSource:
         return cls(text)
 
     def documents(self) -> Iterator[str]:
-        soup = BeautifulSoup(self._raw, "html.parser")
+        soup = BeautifulSoup(self._raw, SOUP_PARSER)
         frames = soup.find_all(["frame", "iframe"])
         found_frame = False
         for fr in frames:
@@ -371,7 +380,7 @@ class ASCParser:
     def parse(self, documents: Iterable[str]) -> list[Course]:
         courses: list[Course] = []
         for doc in documents:
-            soup = BeautifulSoup(doc, "html.parser")
+            soup = BeautifulSoup(doc, SOUP_PARSER)
             courses.extend(self._parse_doc(soup))
         return courses
 
@@ -497,7 +506,7 @@ def _maybe_bundle(text: str) -> dict | None:
 
 def parse_course_detail(code: str, html_text: str) -> CourseDetail:
     """Parse one crsedetail.jsp page: a two-column 'Fields | Content' table."""
-    soup = BeautifulSoup(html_text, "html.parser")
+    soup = BeautifulSoup(html_text, SOUP_PARSER)
     fields: dict[str, str] = {}
     for tr in soup.find_all("tr"):
         cells = tr.find_all(["td", "th"])

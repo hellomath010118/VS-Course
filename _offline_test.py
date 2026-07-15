@@ -53,6 +53,8 @@ def check_share_build():
         "offline_force_cdn_false": "FORCE_CDN = /*__FORCE_CDN__*/false" in off,
         "share_force_cdn_true": "FORCE_CDN = /*__FORCE_CDN__*/true" in shr,
         "share_has_cdn": "cdn.jsdelivr.net/pyodide" in shr,
+        "print_css": "@media print" in off,
+        "print_btn": 'onclick="window.print()"' in off,
     }
 # Fixture ASC dumps + browser binary are machine-specific; override via env.
 CS = os.environ.get("VSC_FIXTURE_CS",
@@ -164,7 +166,9 @@ def run():
                 " cs293:cr('CS 293'), mas801:cr('MAS801'), ma593:cr('MA 593'), cs490:cr('CS 490'),"
                 " ltp_ma105:UNITS.filter(u=>u.code==='MA 105').map(u=>u.ltp),"
                 " hours_all_int:UNITS.every(u=>Number.isInteger(u.contact_hours)),"
-                " ltp_dom:[...document.querySelectorAll('.ltp')].length}})()"
+                " ltp_dom:[...document.querySelectorAll('.ltp')].length,"
+                # estimated credits wear a visible '~' (SingleFile dumps have no officials)
+                " tilde:[...document.querySelectorAll('.cr')].filter(e=>e.textContent.trim().startsWith('~')).length}})()"
             )
             print(f"== credits: {creds}")
 
@@ -242,6 +246,21 @@ def run():
             page.evaluate("['1','7'].forEach(s=>state.busy.delete(s)); saveBusy();"
                           "['CS 213','SI 423'].forEach(k=>{ if(plan[k]) togglePlan(k); }); refresh();")   # cleanup
 
+            # --- lab band: clicking one day's L cell marks THAT day only (used to
+            #     paint all five afternoons, since slot "L" spans the whole week) ---
+            lab = page.evaluate("""(()=>{
+              const prev=[...state.busy]; state.busy.clear();
+              toggleExternalBusy('L','Mon');                      // what a cell click sends
+              const row=[...document.querySelectorAll('#busyTable tr')]
+                .find(r=>(r.querySelector('th.rh')||{}).textContent?.includes('Lab'));
+              const cells=row?[...row.querySelectorAll('td.bt')]:[];
+              const out={extCells:cells.filter(c=>c.classList.contains('ext')).length,
+                         key:[...state.busy].join(",")};
+              state.busy=new Set(prev); saveBusy(); refresh();    // restore
+              return out;
+            })()""")
+            print(f"== lab busy per-day: {lab} (expect extCells=1, not 5)")
+
             # --- Feature 3: suggest -> confirm core -> pinned, counts, persists ---
             page.evaluate("profile.dept='CS'; profile.prog=''; profile.year='3';"
                           "profile.batch=batchFromYear(3); coreSuggestOpen=true; refresh();")
@@ -259,7 +278,7 @@ def run():
 
             info = {"ma105_rows": ma105_rows, "unsched": unsched, "plan1": plan1,
                     "cred_after": cred_after, "plan2": plan2, "creds": creds, "react": react,
-                    "chips": chips, "restrict": restrict, "busy": busy, "core": core}
+                    "chips": chips, "restrict": restrict, "busy": busy, "lab": lab, "core": core}
 
         # rich state for the screenshot: a clashing plan (MA 105 D1 vs MA 419) +
         # a couple of external commitments, so the busy TABLE shows red + clash cells
@@ -302,15 +321,43 @@ def run():
                     "document.getElementById('s-total').textContent !== '0'", timeout=120000)
                 bundle_info = page.evaluate("""(()=>{
                   const u=UNITS.find(x=>x.code==='CS 213');
-                  return u && {official:u.official_credits, src:u.credit_src, est:u.est_credits,
-                               credit:creditOf(u), half:u.half_sem, desc:(u.description||'').length,
-                               ltp:u.ltp, hsTags:document.querySelectorAll('.tag.hs').length,
-                               grabjs:GRAB_JS.length>0,
-                               fileLabel:document.querySelector('#fileList .pill')?.textContent||''};
+                  if(!u) return null;
+                  // official credits render WITHOUT the '~' estimate marker
+                  const crDom=(document.querySelector('.cc[data-key="'+u.key+'"] .cr')||{}).textContent||'';
+                  // click the course name -> info dialog opens with the description
+                  const nm=document.querySelector('.cc[data-key="'+u.key+'"] .nm.info'); if(nm) nm.click();
+                  const dlg=document.getElementById('infoBox');
+                  const dialog={open:!!(dlg&&dlg.open),
+                                hasDesc:(document.getElementById('infoBody').textContent||'')
+                                  .includes('Official description via crsedetail.jsp')};
+                  if(dlg&&dlg.open) dlg.close();
+                  return {official:u.official_credits, src:u.credit_src, est:u.est_credits,
+                          credit:creditOf(u), half:u.half_sem, desc:(u.description||'').length,
+                          ltp:u.ltp, hsTags:document.querySelectorAll('.tag.hs').length,
+                          grabjs:GRAB_JS.length>0, crDom:crDom.trim(), dialog,
+                          fileLabel:document.querySelector('#fileList .pill')?.textContent||''};
                 })()""") or {}
             except Exception as e:
                 print(f"!! bundle did not load: {e}")
             print(f"== bundle upload: {bundle_info}")
+
+        # --- lazy boot: with a cached dataset, a reload must NOT boot Pyodide
+        #     (daily visits stay pure-JS; the parser loads on the next file drop),
+        #     and units must keep their descriptions through the slimmed cache ---
+        lazy = {}
+        if ok:
+            page.reload(wait_until="domcontentloaded")
+            try:
+                page.wait_for_function(
+                    "document.getElementById('s-total') && "
+                    "document.getElementById('s-total').textContent !== '0'", timeout=30000)
+                lazy = page.evaluate(
+                    "({noBoot: pyBoot===null,"
+                    "  cachedMsg: /cached courses/.test(document.getElementById('parserStatus').textContent),"
+                    "  descKept: ((UNIT_BY_KEY['CS 213']||{}).description||'').length>0})")
+            except Exception as e:
+                print(f"!! cached dataset did not restore after reload: {e}")
+            print(f"== reload w/ cache (lazy boot): {lazy}")
 
         browser.close()
 
@@ -336,13 +383,19 @@ def run():
             and all(x == 6 for x in c.get("cs490", [])) and c.get("cs490")   # R&D
             and c.get("ltp_ma105") == ["3-1-0", "3-1-0", "3-1-0", "3-1-0"]
             and c.get("hours_all_int") is True             # hr/week integers
-            and c.get("ltp_dom", 0) > 0)                   # L-T-P shown in the DOM
+            and c.get("ltp_dom", 0) > 0                    # L-T-P shown in the DOM
+            and c.get("tilde", 0) > 0)                     # estimates wear the '~'
         react_ok = (r.get("after_add", 0) > r.get("before", 0)      # extras highlight on add
                     and r.get("after_remove") == r.get("before"))   # and clear on remove
         ch = info.get("chips", {})
         chips_ok = (ch.get("before", {}).get("on", 0) > 0
                     and ch.get("none") == {"on": 0, "rows": 0}
                     and ch.get("all") == ch.get("before"))
+        # lab band: one day's click = ONE marked cell, stored as a day-scoped key
+        lab_ok = (info.get("lab", {}).get("extCells") == 1
+                  and info.get("lab", {}).get("key") == "L:Mon")
+        lazy_ok = (lazy.get("noBoot") is True and lazy.get("cachedMsg") is True
+                   and lazy.get("descKept") is True)
         # Feature 1: a restricted course yields a non-empty, profile-aware reason
         rr = info.get("restrict") or {}
         restrict_ok = bool(rr.get("reasons")) and "Restricted" in (rr.get("text") or "")
@@ -371,7 +424,10 @@ def run():
                      and bi.get("est") == 6 and bi.get("credit") == 8
                      and bi.get("half") is True and bi.get("desc", 0) > 0
                      and bi.get("ltp") == "3-1-0" and bi.get("hsTags", 0) > 0
-                     and bi.get("grabjs") is True and bi.get("fileLabel") == "ALL")
+                     and bi.get("grabjs") is True and bi.get("fileLabel") == "ALL"
+                     and bi.get("crDom") == "8 cr"          # official: no '~' marker
+                     and (bi.get("dialog") or {}).get("open") is True
+                     and (bi.get("dialog") or {}).get("hasDesc") is True)
         good = (ok
                 and info.get("ma105_rows") == 4
                 and info.get("unsched", {}).get("hasSection")
@@ -381,11 +437,11 @@ def run():
                 and info.get("plan1", {}).get("hours", 0) > 0
                 and info.get("cred_after", 0) >= 99
                 and info.get("plan2", {}).get("clash") == 0
-                and credits_ok and react_ok and chips_ok
+                and credits_ok and react_ok and chips_ok and lab_ok and lazy_ok
                 and restrict_ok and busy_ok and core_ok and share_ok and bundle_ok)
         print(f"\n   credits_ok={credits_ok}  react_ok={react_ok}  chips_ok={chips_ok}"
-              f"  restrict_ok={restrict_ok}  busy_ok={busy_ok}  core_ok={core_ok}"
-              f"  share_ok={share_ok}  bundle_ok={bundle_ok}")
+              f"  lab_ok={lab_ok}  lazy_ok={lazy_ok}  restrict_ok={restrict_ok}"
+              f"  busy_ok={busy_ok}  core_ok={core_ok}  share_ok={share_ok}  bundle_ok={bundle_ok}")
         print("==== RESULT:", "PASS" if good else "FAIL", "====")
         return 0 if good else 1
 

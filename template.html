@@ -179,6 +179,9 @@
   .plan-item .meta{color:var(--muted);font-size:12px}
   .credit-in{width:48px;font:inherit;border:1px solid var(--line);border-radius:7px;padding:3px 6px;background:var(--panel)}
   .clashtag{font-size:10.5px;background:var(--clash-red-soft);color:var(--clash-red);border-radius:6px;padding:1px 6px;font-weight:600}
+  /* list rows render the tag unconditionally; the row's .clash class shows it
+     (lets the fast plan-toggle path flip classes without re-rendering the table) */
+  #view-list tr:not(.clash) .clashtag{display:none}
   .planhint{color:var(--muted);font-size:12px}
 
   /* ---- Feature 1: restriction reason line ---- */
@@ -221,6 +224,33 @@
   .plan-item.core{background:var(--ok-soft);border-radius:8px;padding-left:8px}
   .plan-item.core.clash{background:var(--clash-red-soft)}
   .cc.core{box-shadow:inset 0 0 0 1px var(--ok)}
+
+  /* ---- course info dialog (click a course name; shows the full description) ---- */
+  .info{cursor:pointer}
+  .info:hover{text-decoration:underline dotted var(--accent);text-underline-offset:3px}
+  #infoBox{border:0;border-radius:14px;box-shadow:0 24px 64px rgba(17,24,39,.3);
+    padding:0;max-width:600px;width:min(92vw,600px)}
+  #infoBox::backdrop{background:rgba(17,24,39,.35)}
+  #infoBox .dlg{padding:18px 20px;position:relative;font:14px/1.5 ui-sans-serif,system-ui,sans-serif;color:var(--ink)}
+  #infoBox .dlg>.rowx{position:absolute;top:12px;right:16px;font-size:18px;line-height:1}
+  #infoBox h3{margin:0 30px 10px 0;font-size:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  #infoBox .igrid{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px}
+  #infoBox .igrid b{color:var(--muted);font-weight:600;font-size:10.5px;text-transform:uppercase;
+    letter-spacing:.05em;padding-top:2px;white-space:nowrap}
+  #infoBox .idesc{margin:12px 0 0;font-size:13px;line-height:1.55;white-space:pre-line;
+    border-top:1px dashed var(--line);padding-top:10px;max-height:40vh;overflow:auto}
+  #infoBox .idesc.none{color:var(--muted);font-style:italic}
+
+  /* ---- print / save-as-PDF: just the marked timetable (plan panel) ---- */
+  @media print{
+    body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .stats,.toolbar,.card:not(.plan),#view-grid,#view-slot,#view-list,#view-extras,
+    details.hb,.foot,#emptyState,header p{display:none!important}
+    .wrap{padding:0;max-width:none}
+    .card.plan{border:0;box-shadow:none;margin:0;padding:0}
+    .btn,.pin,.rowx,.core-in,.busy-legend .hint,#coreSuggest,.planhint{display:none!important}
+    .busytbl td.bt{cursor:default}
+  }
 </style>
 </head>
 <body>
@@ -260,6 +290,9 @@
         <li><span class="linklike" onclick="copyGrabber()">Copy the grabber script</span> <span class="hint" id="grabCopied"></span>, paste it into the console, press Enter.</li>
         <li>Wait a minute or two — it downloads <b>asc-courses-….json</b> (runs entirely in your browser, on your own session). Drop that file above.</li>
       </ol>
+      <p class="hint">Be kind to ASC: a grab is ~1300 small requests, so <b>one friend grabs per
+      semester and shares the .json</b> — it holds only public course pages (no login tokens,
+      nothing personal), which is exactly why it's shareable.</p>
     </details>
   </div>
 
@@ -305,6 +338,8 @@
       <span class="lbl">My plan</span>
       <span class="planhint">Click the <b>＋</b> on any course to add its section. Divisions plan independently.</span>
       <span class="spacer"></span>
+      <button class="btn" onclick="window.print()"
+        title="Print just this panel (plan + busy table) — pick 'Save as PDF' in the dialog">Print / PDF</button>
       <button class="btn" id="clearPlan">Clear plan</button>
     </div>
     <div class="plan-tot" id="planTotals"></div>
@@ -360,6 +395,12 @@
   <div class="foot" id="foot"></div>
 </div>
 
+<!-- course info dialog: filled by showInfo(key); closes on ✕ / Esc / backdrop click -->
+<dialog id="infoBox" onclick="if(event.target===this)this.close()">
+  <div class="dlg"><span class="rowx" onclick="document.getElementById('infoBox').close()">&times;</span>
+    <div id="infoBody"></div></div>
+</dialog>
+
 <script>
 /* Initial dataset + the embedded parser are injected by build_site():
    - DATA               : initial payload (may be empty; user can add files live)
@@ -393,12 +434,14 @@ const LS = {hidden:"asc_hidden", profile:"asc_profile", dataset:"asc_dataset",
 let files = [];        // [{id,name,dept,count,courses:[...],units:{...},show}] — one per uploaded file
 let COURSES = [];      // active flat rows = concat of shown files' courses (kept for eligibility etc.)
 let UNITS = [];        // active plannable units (course+division) — the primary render/plan entity
+let UNIT_BY_KEY = {};  // key -> unit (fast lookups for plan toggling / the info dialog)
 let SLOT_INFO = {}, DAY_GRID = {};                 // slot metadata (from asc_parser, via payload)
 let DEPTS = [], LEVELS = [], TYPES = [], SLOT_ORDER = [], DEPT_FULL = {};
 let fileSeq = 0;
 
 function load(k,def){try{return JSON.parse(localStorage.getItem(k))??def}catch(e){return def}}
-function save(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}
+  catch(e){console.warn("localStorage save failed for",k,e);return false}}
 
 /* ---------- derive helpers ---------- */
 function typeBucket(t){
@@ -593,7 +636,12 @@ function unitsClash(a,b){
 }
 
 /* ---------- filtering (operates on UNITS) ---------- */
-function unitBusy(u){return (u.meetings||[]).some(m=>state.busy.has(mslot(m)));}
+/* External commitments live in state.busy as either a plain slot ("1", "L" =
+   every meeting of that slot) or a day-scoped lab key ("L:Wed" = labs that day
+   only — the L band spans all five afternoons, so whole-slot marking there
+   would paint the entire week). */
+function busyHit(slot,day){return state.busy.has(slot) || (day && state.busy.has(slot+":"+day));}
+function unitBusy(u){return (u.meetings||[]).some(m=>busyHit(mslot(m),m.day));}
 function passes(u){
   if(hidden[u.code]!==undefined) return false;
   if(!state.depts.has(u.dept)) return false;
@@ -643,11 +691,43 @@ function divBadge(u){return u.division?`<span class="div-badge">${esc(u.division
 function mlabel(m){return `${m.day} ${m.start}\u2013${m.end}`+
   (m.rooms&&m.rooms.length?` \u00b7 ${esc(m.rooms.join(", "))}`:"");}
 /* credits + the L-T-P triple (weekly lecture-tutorial-lab hours) — the standard
-   IITB representation, surfaced next to credits so the integer hours read clearly */
-function credLabel(u){const c=creditOf(u);
+   IITB representation, surfaced next to credits so the integer hours read clearly.
+   ESTIMATES wear a visible "~" so nobody trusts a formula guess as gospel
+   (officials from a grab bundle, and manual overrides, show the bare number). */
+function credSrc(u){
+  if(overrides[u.key]!=null) return "manual";
+  return (u.official_credits!=null)?"official":"estimate";}
+function credText(u){const c=creditOf(u);
+  return c?((credSrc(u)==="estimate"?"~":"")+c):"";}
+function credLabel(u){const c=credText(u);
   const t=u.ltp?` <span class="ltp" title="L-T-P: weekly lecture-tutorial-lab hours">${esc(u.ltp)}</span>`:"";
-  const src=(u.official_credits!=null)?"Credits (official ASC)":"Credits (estimated: 2L+2T+P)";
+  const src={official:"Credits (official ASC)",manual:"Credits (your manual override)",
+             estimate:"Credits (ESTIMATED from the timetable: 2L+2T+P) \u2014 verify odd ones on ASC"}[credSrc(u)];
   return c?`<span class="cr" title="${src}">${c} cr</span>${t}`:"";}
+
+/* Full course details on demand — descriptions were only hover-tooltips before,
+   which (a) nobody finds and (b) truncate. One dialog, reachable from every view. */
+function showInfo(key){
+  const u=UNIT_BY_KEY[key]; if(!u) return;
+  const meets=(u.meetings||[]).map(mlabel).join("<br>")||"no fixed meetings (seminar / project style)";
+  const cr={official:`${u.official_credits} \u2014 official ASC`,
+            manual:`${creditOf(u)} \u2014 your manual override`,
+            estimate:`~${u.est_credits} \u2014 estimated (2L+2T+P), verify on ASC`}[credSrc(u)];
+  const rest=restrictText(u);
+  document.getElementById("infoBody").innerHTML=`
+    <h3>${esc(u.code)} ${divBadge(u)} <span class="muted" style="font-weight:400">${esc(u.name)}</span> ${tags(u)}</h3>
+    <div class="igrid">
+      <b>Credits</b><span>${cr}${u.ltp?` \u00b7 L-T-P ${esc(u.ltp)}`:""}</span>
+      <b>Type</b><span>${esc(u.type||u._bucket||"\u2014")}${u.half_sem?" \u00b7 half-semester":""}</span>
+      <b>Instructor</b><span>${esc(u.instructor||"\u2014")}</span>
+      <b>Slots</b><span>${(u.slots||[]).join(", ")||"\u2014"}</span>
+      <b>Meets</b><span>${meets}</span>
+      ${rest?`<b>Restriction</b><span>${esc(rest)}</span>`:""}
+    </div>
+    <p class="idesc ${u.description?"":"none"}">${esc(u.description||
+      "No official description in this dataset \u2014 load a grab.js bundle (see the courses box) to get one.")}</p>`;
+  document.getElementById("infoBox").showModal();
+}
 
 function renderGrid(us){
   // one cell per (day, slot-family, start, end); units at the same time stack together
@@ -669,10 +749,10 @@ function renderGrid(us){
         <div class="chd"><span class="badge">${esc(c.slot)}</span><span class="time">${c.start}\u2013${c.end}</span></div>`;
       h+=sortForView(c.units).map(u=>{
         const dim=u._otherAdv||u._elig==='restricted', planned=inPlan(u), clash=planned&&clashKeys.has(u.key);
-        return `<div class="cc ${dim?'dim':''} ${planned?'planned':''} ${clash?'clash':''} ${isCorePinned(u)?'core':''}">
+        return `<div class="cc ${dim?'dim':''} ${planned?'planned':''} ${clash?'clash':''} ${isCorePinned(u)?'core':''}" data-key="${esc(u.key)}">
           <span class="x" title="Hide this course" onclick="hideCourse('${esc(u.code)}')">\u00d7</span>
           <div class="code">${pin(u)} ${esc(u.code)} ${divBadge(u)} ${coreBadge(u)} ${tags(u)}</div>
-          <div class="nm" title="${esc(u.description||"")}">${esc(u.name)}</div><div class="crline">${credLabel(u)}</div>${restrictNote(u)}</div>`;
+          <div class="nm info" title="Click for details${u.description?" + description":""}" onclick="showInfo('${esc(u.key)}')">${esc(u.name)}</div><div class="crline">${credLabel(u)}</div>${restrictNote(u)}</div>`;
       }).join("");
       h+=`</div>`;
     }
@@ -696,8 +776,8 @@ function renderTutorials(us){
       <span class="hint" style="text-transform:none;letter-spacing:0">tutorial / extra-slot sessions shown outside the grid</span></div>
     <div class="extra-wrap">`+extra.map(({u,m})=>{
       const planned=inPlan(u), clash=planned&&clashKeys.has(u.key);
-      return `<div class="unit-chip ${planned?'planned':''} ${clash?'clash':''}">${pin(u)}
-        <div class="body"><div class="code">${esc(u.code)} ${divBadge(u)} <span class="badge">${esc(mslot(m))}</span> ${credLabel(u)}</div>
+      return `<div class="unit-chip ${planned?'planned':''} ${clash?'clash':''}" data-key="${esc(u.key)}">${pin(u)}
+        <div class="body info" onclick="showInfo('${esc(u.key)}')" title="Click for details"><div class="code">${esc(u.code)} ${divBadge(u)} <span class="badge">${esc(mslot(m))}</span> ${credLabel(u)}</div>
         <div class="mtg">${mlabel(m)}</div></div></div>`;
     }).join("")+`</div>`;
 }
@@ -708,8 +788,8 @@ function renderUnscheduled(us){
   if(!uns.length) return "";
   return `<div class="subhead" title="Courses with no fixed meeting time (seminars, R&amp;D / projects). Credits come from the course-type table.">Unscheduled / no fixed time <span class="n">${uns.length}</span>
       <span class="hint" style="text-transform:none;letter-spacing:0">no fixed slot \u2014 e.g. seminars &amp; projects</span></div>
-    <div class="extra-wrap">`+uns.map(u=>`<div class="unit-chip ${inPlan(u)?'planned':''}">${pin(u)}
-      <div class="body"><div class="code">${esc(u.code)} ${divBadge(u)} ${credLabel(u)} ${tags(u)}</div>
+    <div class="extra-wrap">`+uns.map(u=>`<div class="unit-chip ${inPlan(u)?'planned':''}" data-key="${esc(u.key)}">${pin(u)}
+      <div class="body info" onclick="showInfo('${esc(u.key)}')" title="Click for details"><div class="code">${esc(u.code)} ${divBadge(u)} ${credLabel(u)} ${tags(u)}</div>
       <div class="mtg">${esc(u.name)} \u00b7 ${esc(u.type||"")}</div></div></div>`).join("")+`</div>`;
 }
 function renderSlot(us){
@@ -726,7 +806,7 @@ function renderSlot(us){
     h+=`<tr><td class="slotcell"><span class="pill ${busy?"busy":""}">${esc(s)}</span></td>
       <td class="muted">${(info.days||[]).join(", ")}</td><td class="muted">${info.time||""}</td>
       <td>${list.length}</td><td>${list.length?list.map(u=>
-        `<span class="pill ${inPlan(u)?'planned':''}" title="${esc(u.instructor)}">${pin(u)} ${esc(u.code)} ${divBadge(u)} \u00b7 ${esc(u.name)} ${tags(u)}</span>`
+        `<span class="pill ${inPlan(u)?'planned':''}" data-key="${esc(u.key)}" title="${esc(u.instructor)}">${pin(u)} ${esc(u.code)} ${divBadge(u)} \u00b7 ${esc(u.name)} ${tags(u)}</span>`
       ).join(""):'<span class="empty">\u2014</span>'}</td></tr>`;
   }
   return h+`</tbody></table>`;   // unscheduled renders in the shared #view-extras block
@@ -753,13 +833,13 @@ function renderList(us){
   for(const u of us){
     const planned=inPlan(u), clash=planned&&clashKeys.has(u.key);
     const times=(u.meetings||[]).map(m=>`${m.day} ${m.start}`).join(", ")||"\u2014";
-    h+=`<tr class="${u._otherAdv||u._elig==='restricted'?'dim':''}">
+    h+=`<tr class="${u._otherAdv||u._elig==='restricted'?'dim':''} ${planned?'planned':''} ${clash?'clash':''}" data-key="${esc(u.key)}">
       <td>${pin(u)}</td>
-      <td class="code">${esc(u.code)} ${coreBadge(u)}</td><td title="${esc(u.description||"")}">${esc(u.name)}${restrictNote(u)}</td>
+      <td class="code">${esc(u.code)} ${coreBadge(u)}</td><td class="info" title="Click for details${u.description?" + description":""}" onclick="showInfo('${esc(u.key)}')">${esc(u.name)}${restrictNote(u)}</td>
       <td>${u.division?esc(u.division):'<span class="muted">\u2014</span>'}</td>
       <td class="slotcell">${(u.slots||[]).map(s=>`<span class="pill ${state.busy.has(s)?"busy":""}">${esc(s)}</span>`).join("")||"\u2014"}</td>
       <td class="muted">${esc(times)}</td>
-      <td>${creditOf(u)||"\u2013"}${u.ltp?` <span class="ltp">${esc(u.ltp)}</span>`:''}${clash?' <span class="clashtag">clash</span>':''}</td>
+      <td>${credText(u)||"\u2013"}${u.ltp?` <span class="ltp">${esc(u.ltp)}</span>`:''} <span class="clashtag">clash</span></td>
       <td class="muted">${u.contact_hours||0}</td>
       <td class="muted">${esc(u._bucket)}</td><td>${tags(u)}</td>
       <td class="muted">${esc(u.instructor)}</td></tr>`;
@@ -790,14 +870,37 @@ function renderHidden(){
 let clashKeys = new Set();                 // unit keys that clash with another planned unit
 function inPlan(u){return !!plan[planKeyOf(u)];}
 function togglePlan(key){
+  let coreCleared=false;
   if(plan[key]){
     delete plan[key];
     // keep cores + plan consistent: unplanning the last division of a confirmed
     // core also clears its core status (so no orphan "core" chip lingers)
-    const u=UNITS.find(x=>x.key===key);
-    if(u && cores.has(u.code) && !UNITS.some(x=>x.code===u.code && plan[x.key])){ cores.delete(u.code); saveCores(); }
+    const u=UNIT_BY_KEY[key];
+    if(u && cores.has(u.code) && !UNITS.some(x=>x.code===u.code && plan[x.key])){
+      cores.delete(u.code); saveCores(); coreCleared=true;
+    }
   } else plan[key]=true;
-  save(LS.plan,plan); refresh();
+  save(LS.plan,plan);
+  if(coreCleared) refresh();   // core badges may sit anywhere -> full pass
+  else refreshPlan();          // otherwise: patch classes in place (a full
+                               // re-render of ~1200 cards made every click laggy)
+}
+/* Fast path for plan-only mutations: the big course lists are untouched — only
+   plan/clash classes + the pin glyphs flip in place, then the (small) plan
+   panel, busy table and core chips re-render. */
+function refreshPlan(){
+  computeClashes();
+  for(const el of document.querySelectorAll("[data-key]")){
+    const key=el.getAttribute("data-key"), planned=!!plan[key];
+    el.classList.toggle("planned",planned);
+    el.classList.toggle("clash",planned&&clashKeys.has(key));
+    const u=UNIT_BY_KEY[key];
+    if(u) el.classList.toggle("core",planned&&isCorePinned(u));
+    const p=el.querySelector(".pin");
+    if(p){p.classList.toggle("on",planned);p.textContent=planned?"\u2713":"\uFF0B";
+      p.title=planned?"Remove from plan":"Add section to plan";}
+  }
+  renderPlan(); renderCores();   // small panels (plan list, busy table, core chips)
 }
 function clearPlan(){
   if(Object.keys(plan).length && !confirm("Remove everything from My Plan? (also clears pinned cores)")) return;
@@ -886,7 +989,7 @@ function busyCellState(row, day){
       codes.push(u.code); if(clashKeys.has(u.key)) clashHit=true;
     }
   }
-  const uniqCodes=[...new Set(codes)], ext=state.busy.has(slot);
+  const uniqCodes=[...new Set(codes)], ext=busyHit(slot,day);
   let st="free";
   if(uniqCodes.length>=2 || clashHit || (uniqCodes.length && ext)) st="clash";
   else if(uniqCodes.length || ext) st="busy";
@@ -897,7 +1000,14 @@ function busyRowLabel(row){
   const slots=new Set(Object.values(row.cells));
   return (slots.size===1 && slots.has("L")) ? row.label+" \u00b7 Lab" : row.label;
 }
-function toggleExternalBusy(s){ state.busy.has(s)?state.busy.delete(s):state.busy.add(s); saveBusy(); refresh(); }
+/* Numeric slots toggle the WHOLE slot (ASC semantics: "busy in slot 1" = all its
+   meetings). The lab band "L" spans every afternoon, so its cells toggle just
+   the clicked DAY ("L:Wed") — this used to paint all five days at once. */
+function toggleExternalBusy(s,day){
+  const key=(s==="L"&&day)?s+":"+day:s;
+  state.busy.has(key)?state.busy.delete(key):state.busy.add(key);
+  saveBusy(); refresh();
+}
 function renderBusyTable(){
   const el=document.getElementById("busyTable"); if(!el) return;
   const days=busyDays(), rows=busyRows();
@@ -910,7 +1020,7 @@ function renderBusyTable(){
       const who=c.codes.length? c.codes.join(", ") : (c.ext? "external commitment":"free");
       const tip=`${d} \u00b7 ${esc(row.label)}${c.slot?` (slot ${c.slot})`:""} \u2014 ${esc(who)}${c.state==="clash"?" \u2014 CLASH":""} \u00b7 click to toggle external`;
       const txt=c.codes.length ? esc(c.codes[0])+(c.codes.length>1?` +${c.codes.length-1}`:"") : (c.ext?"ext":"");
-      h+=`<td class="bt ${c.state}${c.ext?' ext':''}" title="${tip}" onclick="toggleExternalBusy('${esc(c.slot)}')">${txt}</td>`;
+      h+=`<td class="bt ${c.state}${c.ext?' ext':''}" title="${tip}" onclick="toggleExternalBusy('${esc(c.slot)}','${d}')">${txt}</td>`;
     }
     h+=`</tr>`;
   }
@@ -1076,10 +1186,16 @@ function initFiles(){
   return [];
 }
 function saveDataset(){
-  save(LS.dataset,{
-    files:files.map(f=>({name:f.name,dept:f.dept,count:f.count,courses:f.courses,units:f.units,
+  // The flat rows duplicate the units' description (the one BIG string per
+  // course); strip it from the cached copy so a full ~1300-detail bundle stays
+  // well under the localStorage quota. Units keep it — that's what the UI reads.
+  const ok=save(LS.dataset,{
+    files:files.map(f=>({name:f.name,dept:f.dept,count:f.count,
+      courses:(f.courses||[]).map(({description,...c})=>c),units:f.units,
       academic_year:f.academic_year,show:f.show})),
     slot_info:SLOT_INFO, day_grid:DAY_GRID});
+  if(!ok) setParserStatus("Couldn't cache the dataset (browser storage full) \u2014 "+
+    "courses work in this tab but won't survive a reload.","error");
 }
 /* Fallback: rebuild units from flat rows if a cached file predates unit payloads.
    Heuristics still come from Python (each row carries parsed `meetings` + the
@@ -1119,13 +1235,14 @@ function applyDataset(){
   }
   UNITS = Object.values(umap);
   UNITS.forEach(u=>{u._bucket=typeBucket(u.type); u._lvl=u.level||"?";});
+  UNIT_BY_KEY={}; UNITS.forEach(u=>{UNIT_BY_KEY[u.key]=u;});
   DEPT_FULL=computeDeptFull();
   DEPTS =[...new Set(UNITS.map(u=>u.dept))].filter(Boolean).sort();
   LEVELS=[...new Set(UNITS.map(u=>u._lvl))].sort();
   TYPES =[...new Set(UNITS.map(u=>u._bucket))].sort();
   SLOT_ORDER=Object.keys(SLOT_INFO);
   state.depts=new Set(DEPTS); state.levels=new Set(LEVELS); state.types=new Set(TYPES);
-  state.busy=new Set([...state.busy].filter(s=>SLOT_ORDER.includes(s)));
+  state.busy=new Set([...state.busy].filter(s=>SLOT_ORDER.includes(s.split(":")[0])));  // "L:Wed" day-keys survive
   document.getElementById("s-total").textContent=new Set(UNITS.map(u=>u.code)).size;
   const credSrc = UNITS.some(u=>u.official_credits!=null)
     ? "official ASC credits" : "credits est. from ASC slots";
@@ -1167,6 +1284,11 @@ async function bootFrom(indexURL, local){
   if(typeof loadPyodide==="undefined") await loadScript(indexURL+"pyodide.js");
   pyodide=await loadPyodide({indexURL});
   await pyodide.loadPackage("micropip");
+  // lxml (C extension, part of the Pyodide distribution — the wheel is vendored
+  // in ./pyodide/ too): bs4 parses big bundles ~1.5x faster with it. Best-effort;
+  // asc_parser falls back to the stdlib html.parser when it's missing.
+  try{ await pyodide.loadPackage("lxml"); }
+  catch(e){ console.warn("lxml unavailable \u2014 falling back to html.parser:", e); }
   if(local){
     pyodide.globals.set("_wheels", pyodide.toPy(BS4_WHEELS.map(w=>indexURL+w)));
     await pyodide.runPythonAsync(`import micropip\nawait micropip.install(list(_wheels), deps=False)`);
@@ -1296,7 +1418,11 @@ document.getElementById("foot").textContent=
 /* ---------- init ---------- */
 files=initFiles();   // restore cached dataset or build-time preload (instant, no Pyodide)
 applyDataset();
-bootPyodide();       // warm up the parser in the background so uploads are ready
+/* Boot the Python runtime eagerly only on an EMPTY page (the user is about to
+   drop files). With a cached dataset the daily visit stays pure-JS — no 14 MB
+   WASM compile churning the tab; addFiles() awaits bootPyodide() on demand. */
+if(files.length) setParserStatus("Using your cached courses \u2014 the Python parser loads only when you drop new files.","ready");
+else bootPyodide();  // warm up in the background so the first drop is ready
 </script>
 </body>
 </html>

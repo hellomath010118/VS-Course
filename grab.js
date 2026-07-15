@@ -43,10 +43,21 @@
   hostDoc.body.appendChild(ui);
   const status = t => { ui.textContent = "VS Course grabber \u2014 " + t; console.log("[grab]", t); };
 
+  // ASC's JSPs are old and often omit the charset header; r.text() would then
+  // assume UTF-8 and turn every ’ or – in a course name into \uFFFD ("Bachelor�s").
+  // Decode the raw bytes: declared charset > strict UTF-8 > windows-1252.
   const fetchText = async url => {
     const r = await fetch(url, { credentials: "include" });
     if (!r.ok) throw new Error("HTTP " + r.status);
-    return r.text();
+    const buf = await r.arrayBuffer();
+    let cs = (/charset=([\w-]+)/i.exec(r.headers.get("content-type") || "") || [])[1];
+    if (!cs) {  // sniff a <meta charset=...> in the head (ASCII-safe peek)
+      const head = new TextDecoder("latin1").decode(buf.slice(0, 2048));
+      cs = (/<meta[^>]+charset=["']?([\w-]+)/i.exec(head) || [])[1];
+    }
+    if (cs) { try { return new TextDecoder(cs).decode(buf); } catch (e) { /* unknown label */ } }
+    try { return new TextDecoder("utf-8", { fatal: true }).decode(buf); }
+    catch (e) { return new TextDecoder("windows-1252").decode(buf); }
   };
 
   const first = new URL(deptLinks[0]);
